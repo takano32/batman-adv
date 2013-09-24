@@ -227,6 +227,7 @@ struct batadv_hard_iface {
 
 	/** @neigh_list_lock: lock protecting neigh_list */
 	spinlock_t neigh_list_lock;
+	atomic_t no_rebroadcast;
 };
 
 /**

@@ -137,6 +137,17 @@ struct batadv_attribute batadv_attr_vlan_##_name = {	\
 	.store  = _store,				\
 }
 
+/* Use this, if you have customized show and store functions
+ * for hard interface attrs
+ */
+#define BATADV_ATTR_HIF(_name, _mode, _show, _store)	\
+struct batadv_attribute batadv_attr_hif_##_name = {	\
+	.attr = {.name = __stringify(_name),		\
+		 .mode = _mode },			\
+	.show   = _show,				\
+	.store  = _store,				\
+};
+
 /* Use this, if you have customized show and store functions */
 #define BATADV_ATTR(_name, _mode, _show, _store)	\
 struct batadv_attribute batadv_attr_##_name = {		\
@@ -295,6 +306,52 @@ ssize_t batadv_show_##_name(struct kobject *kobj,			\
 	static BATADV_ATTR_HIF_SHOW_UINT(_name, _var)			\
 	static BATADV_ATTR(_name, _mode, batadv_show_##_name,		\
 			   batadv_store_##_name)
+
+#define BATADV_ATTR_HIF_STORE_BOOL(_name, _post_func)			\
+ssize_t batadv_store_hif_##_name(struct kobject *kobj,			\
+				 struct attribute *attr, char *buff,	\
+				 size_t count)				\
+{									\
+	struct net_device *net_dev = batadv_kobj_to_netdev(kobj);	\
+	struct batadv_hard_iface *hard_iface;				\
+	size_t res;							\
+									\
+	hard_iface = batadv_hardif_get_by_netdev(net_dev);		\
+	if (!hard_iface)						\
+		return 0;						\
+									\
+	res = __batadv_store_bool_attr(buff, count, _post_func,		\
+					      attr, &hard_iface->_name,	\
+					      hard_iface->soft_iface);	\
+	batadv_hardif_put(hard_iface);					\
+	return res;							\
+}
+
+#define BATADV_ATTR_HIF_SHOW_BOOL(_name)				\
+ssize_t batadv_show_hif_##_name(struct kobject *kobj,			\
+				struct attribute *attr, char *buff)	\
+{									\
+	struct net_device *net_dev = batadv_kobj_to_netdev(kobj);	\
+	struct batadv_hard_iface *hard_iface;				\
+	size_t res;							\
+									\
+	hard_iface = batadv_hardif_get_by_netdev(net_dev);		\
+	if (!hard_iface)						\
+		return 0;						\
+									\
+	res = sprintf(buff, "%s\n",					\
+		      atomic_read(&hard_iface->_name) == 0 ?		\
+				"disabled" : "enabled");		\
+	batadv_hardif_put(hard_iface);					\
+	return res;							\
+}
+
+/* Use this, if you are going to turn a [name] in the vlan struct on or off */
+#define BATADV_ATTR_HIF_BOOL(_name, _mode, _post_func)			\
+	static BATADV_ATTR_HIF_STORE_BOOL(_name, _post_func)		\
+	static BATADV_ATTR_HIF_SHOW_BOOL(_name)				\
+	static BATADV_ATTR_HIF(_name, _mode, batadv_show_hif_##_name,	\
+			       batadv_store_hif_##_name)
 
 static int batadv_store_bool_attr(char *buff, size_t count,
 				  struct net_device *net_dev,
@@ -1125,6 +1182,7 @@ static ssize_t batadv_show_throughput_override(struct kobject *kobj,
 static BATADV_ATTR(mesh_iface, 0644, batadv_show_mesh_iface,
 		   batadv_store_mesh_iface);
 static BATADV_ATTR(iface_status, 0444, batadv_show_iface_status, NULL);
+BATADV_ATTR_HIF_BOOL(no_rebroadcast, 0644, NULL);
 #ifdef CONFIG_BATMAN_ADV_BATMAN_V
 BATADV_ATTR_HIF_UINT(elp_interval, bat_v.elp_interval, 0644,
 		     2 * BATADV_JITTER, INT_MAX, NULL);
@@ -1135,6 +1193,7 @@ static BATADV_ATTR(throughput_override, 0644, batadv_show_throughput_override,
 static struct batadv_attribute *batadv_batman_attrs[] = {
 	&batadv_attr_mesh_iface,
 	&batadv_attr_iface_status,
+	&batadv_attr_hif_no_rebroadcast,
 #ifdef CONFIG_BATMAN_ADV_BATMAN_V
 	&batadv_attr_elp_interval,
 	&batadv_attr_throughput_override,
