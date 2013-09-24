@@ -924,6 +924,10 @@ static void batadv_send_outstanding_bcast_packet(struct work_struct *work)
 		if (neigh_node)
 			batadv_hardif_neigh_put(neigh_node);
 
+		if (atomic_read(&hard_iface->no_rebroadcast) &&
+		    forw_packet->skb->dev == hard_iface->net_dev)
+			continue;
+
 		if (!kref_get_unless_zero(&hard_iface->refcount))
 			continue;
 

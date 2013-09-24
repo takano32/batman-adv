@@ -173,6 +173,7 @@ struct batadv_hard_iface {
 	struct hlist_head neigh_list;
 	/* neigh_list_lock protects: neigh_list */
 	spinlock_t neigh_list_lock;
+	atomic_t no_rebroadcast;
 };
 
 /**

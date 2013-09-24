@@ -28,3 +28,14 @@ description:
                 when estimating the link throughput using this interface.
                 If the value is set to 0 then batman-adv will try to
                 estimate the throughput by itself.
+
+What:           /sys/class/net/<iface>/batman-adv/no_rebroadcast
+Date:           Sep 2013
+Contact:        Linus Lüssing <linus.luessing@web.de>
+Description:
+                With this option set incoming multicast payload frames on
+                <iface> are not being rebroadcasted on <iface> again. This
+                option should be set on links which are known to be transitive
+                and symmetric only, for instance point-to-point wifi longshots
+                or wired links. Using this option wrongly is going to
+                break your mesh network, use at your own risk!
