@@ -528,8 +528,8 @@ batadv_forw_packet_alloc(struct batadv_hard_iface *if_incoming,
 		if (queue_left == &bat_priv->batman_queue_left)
 			qname = "batman";
 
-		batadv_dbg(BATADV_DBG_BATMAN, bat_priv,
-			   "%s queue is full\n", qname);
+		net_ratelimited_function(batadv_err, bat_priv->soft_iface,
+					 "%s queue full\n", qname);
 
 		return NULL;
 	}
