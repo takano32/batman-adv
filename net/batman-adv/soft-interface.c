@@ -309,6 +309,18 @@ send:
 			if (forw_mode == BATADV_FORW_SINGLE)
 				do_bcast = false;
 		}
+
+		/* DHCP to from server to client should use unicast when TT
+		 * entry is available and use broadcast as fallback
+		 */
+		if (!mcast_single_orig && dhcp_rcp == BATADV_DHCP_TO_CLIENT) {
+			mcast_single_orig = batadv_transtable_search(bat_priv,
+								     NULL,
+								     dst_hint,
+								     vid);
+			if (!mcast_single_orig)
+				do_bcast = true;
+		}
 	}
 
 	batadv_skb_set_priority(skb, 0);
