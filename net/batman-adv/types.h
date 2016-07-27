@@ -339,8 +339,8 @@ struct batadv_orig_node {
 	struct kref refcount;
 	struct rcu_head rcu;
 #ifdef CONFIG_BATMAN_ADV_NC
-	std::list<struct batadv_nc_node> in_coding_list;
-	std::list<struct batadv_nc_node> out_coding_list;
+	struct batadv_nc_node in_coding_list[LIST];
+	struct batadv_nc_node out_coding_list[LIST];
 	spinlock_t in_coding_list_lock; /* Protects in_coding_list */
 	spinlock_t out_coding_list_lock; /* Protects out_coding_list */
 #endif
@@ -930,7 +930,7 @@ struct batadv_tp_vars {
 
 	/* receiver variables */
 	u32 last_recv;
-	std::list<struct batadv_tp_unacked> unacked_list;
+	struct batadv_tp_unacked unacked_list[LIST];
 	spinlock_t unacked_lock; /* Protects unacked_list */
 	unsigned long last_recv_time;
 	struct kref refcount;
@@ -1229,7 +1229,7 @@ struct batadv_tt_local_entry {
  */
 struct batadv_tt_global_entry {
 	struct batadv_tt_common_entry common;
-	struct batadv_tt_orig_list orig_list[HLIST];
+	struct batadv_tt_orig_list_entry orig_list[HLIST];
 	atomic_t orig_list_count;
 	spinlock_t list_lock;	/* protects orig_list */
 	unsigned long roam_at;
