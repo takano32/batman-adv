@@ -48,7 +48,7 @@ edge_type = {
 	edge2str('batadv_neigh_ifinfo', 'if_outgoing', 'batadv_hard_iface'):               EDGE_KREF,
 	edge2str('batadv_neigh_ifinfo', 'bat_iv', 'batadv_neigh_ifinfo\l_bat_iv'):         EDGE_NOPOINTER,
 	edge2str('batadv_neigh_node', 'orig_node', 'batadv_orig_node'):                    EDGE_NOKREF,
-	edge2str('batadv_orig_node', 'ifinfo_list', 'batadv_neigh_ifinfo'):                EDGE_KREF,
+	edge2str('batadv_orig_node', 'ifinfo_list', 'batadv_orig_ifinfo'):                 EDGE_KREF,
 	edge2str('batadv_orig_node', 'bat_iv', 'batadv_orig_bat_iv'):                      EDGE_NOPOINTER,
 	edge2str('batadv_orig_node', 'fragments', 'batadv_frag_table_entry'):              EDGE_DEFAULT,
 	edge2str('batadv_frag_table_entry', 'fragment_list', 'batadv_frag_list_entry'):    EDGE_DEFAULT,

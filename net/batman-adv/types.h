@@ -302,7 +302,7 @@ struct batadv_orig_bat_iv {
  */
 struct batadv_orig_node {
 	u8 orig[ETH_ALEN];
-	struct batadv_neigh_ifinfo ifinfo_list[HLIST];
+	struct batadv_orig_ifinfo ifinfo_list[HLIST];
 	struct batadv_orig_ifinfo *last_bonding_candidate;
 #ifdef CONFIG_BATMAN_ADV_DAT
 	batadv_dat_addr_t dat_addr;
