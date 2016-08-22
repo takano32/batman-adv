@@ -594,7 +594,7 @@ out:
 /**
  * batadv_v_ogm_process_per_outif - process a batman v OGM for an outgoing if
  * @bat_priv: the bat priv with all the soft interface information
- * @ethhdr: the Ethernet header of the OGM2
+ * @skb: the skb containing the OGM2
  * @ogm2: OGM2 structure
  * @orig_node: Originator structure for which the OGM has been received
  * @neigh_node: the neigh_node through with the OGM has been received
@@ -603,13 +603,15 @@ out:
  */
 static void
 batadv_v_ogm_process_per_outif(struct batadv_priv *bat_priv,
-			       const struct ethhdr *ethhdr,
+			       const struct sk_buff *skb,
 			       const struct batadv_ogm2_packet *ogm2,
 			       struct batadv_orig_node *orig_node,
 			       struct batadv_neigh_node *neigh_node,
 			       struct batadv_hard_iface *if_incoming,
 			       struct batadv_hard_iface *if_outgoing)
 {
+	const struct ethhdr *ethhdr = eth_hdr(skb);
+	unsigned int tvlv_offset = sizeof(*ogm2);
 	int seqno_age;
 	bool forward;
 
@@ -623,11 +625,16 @@ batadv_v_ogm_process_per_outif(struct batadv_priv *bat_priv,
 		return;
 
 	/* only unknown & newer OGMs contain TVLVs we are interested in */
-	if ((seqno_age > 0) && (if_outgoing == BATADV_IF_DEFAULT))
+	if ((seqno_age > 0) && (if_outgoing == BATADV_IF_DEFAULT)) {
+		batadv_tvlv_containers_process2(bat_priv, skb, BATADV_OGM2,
+						tvlv_offset,
+						ntohs(ogm2->tvlv_len),
+						orig_node);
 		batadv_tvlv_containers_process(bat_priv, true, orig_node,
 					       NULL, NULL,
 					       (unsigned char *)(ogm2 + 1),
 					       ntohs(ogm2->tvlv_len));
+	}
 
 	/* if the metric update went through, update routes if needed */
 	forward = batadv_v_ogm_route_update(bat_priv, ethhdr, ogm2, orig_node,
@@ -728,7 +735,7 @@ static void batadv_v_ogm_process(const struct sk_buff *skb, int ogm_offset,
 	path_throughput = min_t(u32, link_throughput, ogm_throughput);
 	ogm_packet->throughput = htonl(path_throughput);
 
-	batadv_v_ogm_process_per_outif(bat_priv, ethhdr, ogm_packet, orig_node,
+	batadv_v_ogm_process_per_outif(bat_priv, skb, ogm_packet, orig_node,
 				       neigh_node, if_incoming,
 				       BATADV_IF_DEFAULT);
 
@@ -772,7 +779,7 @@ static void batadv_v_ogm_process(const struct sk_buff *skb, int ogm_offset,
 			continue;
 		}
 
-		batadv_v_ogm_process_per_outif(bat_priv, ethhdr, ogm_packet,
+		batadv_v_ogm_process_per_outif(bat_priv, skb, ogm_packet,
 					       orig_node, neigh_node,
 					       if_incoming, hard_iface);
 

@@ -1597,8 +1597,11 @@ struct batadv_tvlv_container {
  *  incoming OGM packets
  * @unicast_handler: handler callback which is given the tvlv payload to process
  *  on incoming unicast tvlv packets
- * @type: tvlv type this handler feels responsible for
- * @version: tvlv version this handler feels responsible for
+ * @handler: handler callback which is given the tvlv payload to process on
+ *  incoming packets of the given packet type
+ * @packet_type: packet type this handler feels responsible for
+ * @tvlv_type: tvlv type this handler feels responsible for
+ * @tvlv_version: tvlv version this handler feels responsible for
  * @flags: tvlv handler flags
  * @refcount: number of contexts the object is used
  * @rcu: struct used for freeing in an RCU-safe manner
@@ -1611,8 +1614,11 @@ struct batadv_tvlv_handler {
 	int (*unicast_handler)(struct batadv_priv *bat_priv,
 			       u8 *src, u8 *dst,
 			       void *tvlv_value, u16 tvlv_value_len);
-	u8 type;
-	u8 version;
+	int (*handler)(struct batadv_priv *bat_priv, void *tvlv_value,
+		       u16 tvlv_value_len, void *ctx);
+	int packet_type;
+	u8 tvlv_type;
+	u8 tvlv_version;
 	u8 flags;
 	struct kref refcount;
 	struct rcu_head rcu;
@@ -1620,15 +1626,15 @@ struct batadv_tvlv_handler {
 
 /**
  * enum batadv_tvlv_handler_flags - tvlv handler flags definitions
- * @BATADV_TVLV_HANDLER_OGM_CIFNOTFND: tvlv ogm processing function will call
+ * @BATADV_TVLV_HANDLER_CIFNOTFND: tvlv processing function will call
  *  this handler even if its type was not found (with no data)
- * @BATADV_TVLV_HANDLER_OGM_CALLED: interval tvlv handling flag - the API marks
+ * @BATADV_TVLV_HANDLER_CALLED: internal tvlv handling flag - the API marks
  *  a handler as being called, so it won't be called if the
- *  BATADV_TVLV_HANDLER_OGM_CIFNOTFND flag was set
+ *  BATADV_TVLV_HANDLER_CIFNOTFND flag was set
  */
 enum batadv_tvlv_handler_flags {
-	BATADV_TVLV_HANDLER_OGM_CIFNOTFND = BIT(1),
-	BATADV_TVLV_HANDLER_OGM_CALLED = BIT(2),
+	BATADV_TVLV_HANDLER_CIFNOTFND = BIT(1),
+	BATADV_TVLV_HANDLER_CALLED = BIT(2),
 };
 
 /**

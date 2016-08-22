@@ -1110,23 +1110,23 @@ static void batadv_mcast_want_ipv6_update(struct batadv_priv *bat_priv,
 /**
  * batadv_mcast_tvlv_ogm_handler - process incoming multicast tvlv container
  * @bat_priv: the bat priv with all the soft interface information
- * @orig: the orig_node of the ogm
- * @flags: flags indicating the tvlv state (see batadv_tvlv_handler_flags)
  * @tvlv_value: tvlv buffer containing the multicast data
  * @tvlv_value_len: tvlv buffer length
+ * @ctx: handler specific context information (here: orig_node)
+ *
+ * Return: Always NET_RX_SUCCESS.
  */
-static void batadv_mcast_tvlv_ogm_handler(struct batadv_priv *bat_priv,
-					  struct batadv_orig_node *orig,
-					  u8 flags,
-					  void *tvlv_value,
-					  u16 tvlv_value_len)
+static int batadv_mcast_tvlv_ogm_handler(struct batadv_priv *bat_priv,
+					 void *tvlv_value,
+					 u16 tvlv_value_len,
+					 void *ctx)
 {
-	bool orig_mcast_enabled = !(flags & BATADV_TVLV_HANDLER_OGM_CIFNOTFND);
+	struct batadv_orig_node *orig = ctx;
+	bool orig_mcast_enabled = !!tvlv_value;
 	u8 mcast_flags = BATADV_NO_FLAGS;
 	bool orig_initialized;
 
-	if (orig_mcast_enabled && tvlv_value &&
-	    (tvlv_value_len >= sizeof(mcast_flags)))
+	if (orig_mcast_enabled && (tvlv_value_len >= sizeof(mcast_flags)))
 		mcast_flags = *(u8 *)tvlv_value;
 
 	spin_lock_bh(&orig->mcast_handler_lock);
@@ -1161,6 +1161,8 @@ static void batadv_mcast_tvlv_ogm_handler(struct batadv_priv *bat_priv,
 
 	orig->mcast_flags = mcast_flags;
 	spin_unlock_bh(&orig->mcast_handler_lock);
+
+	return NET_RX_SUCCESS;
 }
 
 /**
@@ -1169,9 +1171,12 @@ static void batadv_mcast_tvlv_ogm_handler(struct batadv_priv *bat_priv,
  */
 void batadv_mcast_init(struct batadv_priv *bat_priv)
 {
-	batadv_tvlv_handler_register(bat_priv, batadv_mcast_tvlv_ogm_handler,
-				     NULL, BATADV_TVLV_MCAST, 2,
-				     BATADV_TVLV_HANDLER_OGM_CIFNOTFND);
+	batadv_tvlv_handler_register2(bat_priv, batadv_mcast_tvlv_ogm_handler,
+				      BATADV_IV_OGM, BATADV_TVLV_MCAST, 2,
+				      BATADV_TVLV_HANDLER_CIFNOTFND);
+	batadv_tvlv_handler_register2(bat_priv, batadv_mcast_tvlv_ogm_handler,
+				      BATADV_OGM2, BATADV_TVLV_MCAST, 2,
+				      BATADV_TVLV_HANDLER_CIFNOTFND);
 
 	INIT_DELAYED_WORK(&bat_priv->mcast.work, batadv_mcast_mla_update);
 	batadv_mcast_start_timer(bat_priv);
@@ -1289,7 +1294,11 @@ void batadv_mcast_free(struct batadv_priv *bat_priv)
 	cancel_delayed_work_sync(&bat_priv->mcast.work);
 
 	batadv_tvlv_container_unregister(bat_priv, BATADV_TVLV_MCAST, 2);
-	batadv_tvlv_handler_unregister(bat_priv, BATADV_TVLV_MCAST, 2);
+
+	batadv_tvlv_handler_unregister2(bat_priv, BATADV_IV_OGM,
+					BATADV_TVLV_MCAST, 2);
+	batadv_tvlv_handler_unregister2(bat_priv, BATADV_OGM2,
+					BATADV_TVLV_MCAST, 2);
 
 	/* safely calling outside of worker, as worker was canceled above */
 	batadv_mcast_mla_tt_retract(bat_priv, NULL);
