@@ -1492,7 +1492,7 @@ batadv_iv_ogm_process_per_outif(const struct sk_buff *skb, int ogm_offset,
 	}
 
 	if (if_outgoing == BATADV_IF_DEFAULT)
-		batadv_tvlv_ogm_receive(bat_priv, ogm_packet, orig_node);
+		batadv_tvlv_ogm_receive(bat_priv, skb, orig_node);
 
 	/* if sender is a direct neighbor the sender mac equals
 	 * originator mac
@@ -1837,6 +1837,8 @@ static int batadv_iv_ogm_receive(struct sk_buff *skb,
 	ogm_offset = 0;
 	ogm_packet = (struct batadv_ogm_packet *)skb->data;
 
+	WARN_ON(skb_network_offset(skb) != 0);
+
 	/* unpack the aggregated packets and process them one by one */
 	while (batadv_iv_ogm_aggr_packet(ogm_offset, skb_headlen(skb),
 					 ogm_packet->tvlv_len)) {
@@ -1847,6 +1849,8 @@ static int batadv_iv_ogm_receive(struct sk_buff *skb,
 
 		packet_pos = skb->data + ogm_offset;
 		ogm_packet = (struct batadv_ogm_packet *)packet_pos;
+
+		skb_set_network_header(skb, ogm_offset);
 	}
 
 	ret = NET_RX_SUCCESS;

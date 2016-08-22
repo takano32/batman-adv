@@ -27,6 +27,7 @@
 #include <linux/lockdep.h>
 #include <linux/netdevice.h>
 #include <linux/pkt_sched.h>
+#include <linux/printk.h>
 #include <linux/rculist.h>
 #include <linux/rcupdate.h>
 #include <linux/skbuff.h>
@@ -68,23 +69,28 @@ static void batadv_tvlv_handler_put(struct batadv_tvlv_handler *tvlv_handler)
  * batadv_tvlv_handler_get - retrieve tvlv handler from the tvlv handler list
  *  based on the provided type and version (both need to match)
  * @bat_priv: the bat priv with all the soft interface information
- * @type: tvlv handler type to look for
- * @version: tvlv handler version to look for
+ * @packet_type: packet type to look for
+ * @tvlv_type: tvlv handler type to look for
+ * @tvlv_version: tvlv handler version to look for
  *
  * Return: tvlv handler if found or NULL otherwise.
  */
 static struct batadv_tvlv_handler *
-batadv_tvlv_handler_get(struct batadv_priv *bat_priv, u8 type, u8 version)
+batadv_tvlv_handler_get(struct batadv_priv *bat_priv, int packet_type,
+			u8 tvlv_type, u8 tvlv_version)
 {
 	struct batadv_tvlv_handler *tvlv_handler_tmp, *tvlv_handler = NULL;
 
 	rcu_read_lock();
 	hlist_for_each_entry_rcu(tvlv_handler_tmp,
 				 &bat_priv->tvlv.handler_list, list) {
-		if (tvlv_handler_tmp->type != type)
+		if (tvlv_handler_tmp->packet_type != packet_type)
 			continue;
 
-		if (tvlv_handler_tmp->version != version)
+		if (tvlv_handler_tmp->tvlv_type != tvlv_type)
+			continue;
+
+		if (tvlv_handler_tmp->tvlv_version != tvlv_version)
 			continue;
 
 		if (!kref_get_unless_zero(&tvlv_handler_tmp->refcount))
@@ -387,7 +393,7 @@ static int batadv_tvlv_call_handler(struct batadv_priv *bat_priv,
 		tvlv_handler->ogm_handler(bat_priv, orig_node,
 					  BATADV_NO_FLAGS,
 					  tvlv_value, tvlv_value_len);
-		tvlv_handler->flags |= BATADV_TVLV_HANDLER_OGM_CALLED;
+		tvlv_handler->flags |= BATADV_TVLV_HANDLER_CALLED;
 	} else {
 		if (!src)
 			return NET_RX_SUCCESS;
@@ -404,6 +410,139 @@ static int batadv_tvlv_call_handler(struct batadv_priv *bat_priv,
 	}
 
 	return NET_RX_SUCCESS;
+}
+
+/**
+ * batadv_tvlv_call_handler2 - call the appropriate tvlv handler
+ * @bat_priv: the bat priv with all the soft interface information
+ * @packet_type: packet type to look and call for
+ * @tvlv_type: tvlv handler type to look and call for
+ * @tvlv_version: tvlv handler version to look and call for
+ * @tvlv_value: tvlv content
+ * @tvlv_value_len: tvlv content length
+ * @ctx: handler specific context information
+ *
+ * Return: NET_RX_SUCCESS if handler was found and called successfully,
+ * NET_RX_DROP otherwise.
+ */
+static int batadv_tvlv_call_handler2(struct batadv_priv *bat_priv,
+				     u8 packet_type, u8 tvlv_type,
+				     u8 tvlv_version, void *tvlv_value,
+				     u16 tvlv_value_len, void *ctx)
+{
+	struct batadv_tvlv_handler *tvlv_handler;
+	int ret;
+
+	tvlv_handler = batadv_tvlv_handler_get(bat_priv, packet_type, tvlv_type,
+					       tvlv_version);
+	if (!tvlv_handler)
+		return NET_RX_DROP;
+
+	ret = tvlv_handler->handler(bat_priv, tvlv_value, tvlv_value_len, ctx);
+	tvlv_handler->flags |= BATADV_TVLV_HANDLER_CALLED;
+
+	batadv_tvlv_handler_put(tvlv_handler);
+
+	return ret;
+}
+
+/**
+ * batadv_tvlv_call_unfound_handlers - call any handler not called yet
+ * @bat_priv: the bat priv with all the soft interface information
+ * @packet_type: the packet type to call handlers of unfound TVLVs for
+ * @ctx: handler specific context information
+ *
+ * For any registered TVLV handler with a CIFNOTFND flag: If a matching
+ * tvlv type was not found in a specific packet (type) then this calls the
+ * according handler with an empty (NULL) tvlv_value and tvlv_value_len of
+ * zero now.
+ */
+static void batadv_tvlv_call_unfound_handlers(struct batadv_priv *bat_priv,
+					      int packet_type, void *ctx)
+{
+	struct batadv_tvlv_handler *tvlv_handler;
+
+	rcu_read_lock();
+	hlist_for_each_entry_rcu(tvlv_handler,
+				 &bat_priv->tvlv.handler_list, list) {
+		if (tvlv_handler->packet_type != packet_type)
+			continue;
+
+		if ((tvlv_handler->flags & BATADV_TVLV_HANDLER_CIFNOTFND) &&
+		    !(tvlv_handler->flags & BATADV_TVLV_HANDLER_CALLED))
+			tvlv_handler->handler(bat_priv, NULL, 0, ctx);
+
+		tvlv_handler->flags &= ~BATADV_TVLV_HANDLER_CALLED;
+	}
+	rcu_read_unlock();
+}
+
+/**
+ * batadv_tvlv_containers_process2 - parse and process TVLV content of a packet
+ * @bat_priv: the bat priv with all the soft interface information
+ * @skb: the packet to parse and process TVLV data from
+ * @packet_type: the packet type to call handlers for
+ * @tvlv_offset: offset from the skb data pointer to the first tvlv header
+ * @tvlv_value_len: total tvlv content length (sum of all tvlv headers+values)
+ * @ctx: handler specific context information
+ *
+ * This function parses TVLV options of the given skb and tries to call the
+ * appropriate, registered handlers.
+ *
+ * In the end, all not yet called handlers (because no appropriate TVLV was
+ * found in the packet) which were registered with a CIFNOTFND flag are
+ * called with empty tvlv_value pointers.
+ *
+ * Return: NET_RX_SUCCESS if all TVLVs were known and parsed, as well as
+ * any TVLV handler called successfully. Returns NET_RX_DROP otherwise.
+ */
+int batadv_tvlv_containers_process2(struct batadv_priv *bat_priv,
+				    const struct sk_buff *skb, u8 packet_type,
+				    unsigned int tvlv_offset,
+				    u16 tvlv_value_len, void *ctx)
+{
+	struct batadv_tvlv_hdr *tvlv_hdr, tvlv_hdr_buff;
+	u8 *tvlv_value, tvlv_value_buff[128];
+	u16 tvlv_value_cont_len;
+	int ret = NET_RX_SUCCESS;
+
+	while (tvlv_value_len >= sizeof(*tvlv_hdr)) {
+		tvlv_hdr = skb_header_pointer(skb, tvlv_offset,
+					      sizeof(tvlv_hdr_buff),
+					      &tvlv_hdr_buff);
+		if (!tvlv_hdr)
+			return NET_RX_DROP;
+
+		tvlv_value_cont_len = ntohs(tvlv_hdr->len);
+		tvlv_offset += sizeof(*tvlv_hdr);
+		tvlv_value_len -= sizeof(*tvlv_hdr);
+
+		if (tvlv_value_cont_len > sizeof(tvlv_value_buff)) {
+			pr_warn_once("batman-adv: TVLVs greater than 128 bytes unsupported for now, ignoring\n");
+			goto skip_handler_call;
+		}
+
+		if (tvlv_value_cont_len > tvlv_value_len)
+			return NET_RX_DROP;
+
+		tvlv_value = skb_header_pointer(skb, tvlv_offset,
+						tvlv_value_cont_len,
+						tvlv_value_buff);
+		if (!tvlv_value)
+			return NET_RX_DROP;
+
+		ret |= batadv_tvlv_call_handler2(bat_priv, packet_type,
+						 tvlv_hdr->type,
+						 tvlv_hdr->version, tvlv_value,
+						 tvlv_value_cont_len, ctx);
+skip_handler_call:
+		tvlv_offset += tvlv_value_cont_len;
+		tvlv_value_len -= tvlv_value_cont_len;
+	}
+
+	batadv_tvlv_call_unfound_handlers(bat_priv, packet_type, ctx);
+
+	return ret;
 }
 
 /**
@@ -429,7 +568,7 @@ int batadv_tvlv_containers_process(struct batadv_priv *bat_priv,
 	struct batadv_tvlv_handler *tvlv_handler;
 	struct batadv_tvlv_hdr *tvlv_hdr;
 	u16 tvlv_value_cont_len;
-	u8 cifnotfound = BATADV_TVLV_HANDLER_OGM_CIFNOTFND;
+	u8 cifnotfound = BATADV_TVLV_HANDLER_CIFNOTFND;
 	int ret = NET_RX_SUCCESS;
 
 	while (tvlv_value_len >= sizeof(*tvlv_hdr)) {
@@ -441,7 +580,7 @@ int batadv_tvlv_containers_process(struct batadv_priv *bat_priv,
 		if (tvlv_value_cont_len > tvlv_value_len)
 			break;
 
-		tvlv_handler = batadv_tvlv_handler_get(bat_priv,
+		tvlv_handler = batadv_tvlv_handler_get(bat_priv, -1,
 						       tvlv_hdr->type,
 						       tvlv_hdr->version);
 
@@ -461,12 +600,15 @@ int batadv_tvlv_containers_process(struct batadv_priv *bat_priv,
 	rcu_read_lock();
 	hlist_for_each_entry_rcu(tvlv_handler,
 				 &bat_priv->tvlv.handler_list, list) {
-		if ((tvlv_handler->flags & BATADV_TVLV_HANDLER_OGM_CIFNOTFND) &&
-		    !(tvlv_handler->flags & BATADV_TVLV_HANDLER_OGM_CALLED))
+		if (tvlv_handler->packet_type != -1)
+			continue;
+
+		if ((tvlv_handler->flags & BATADV_TVLV_HANDLER_CIFNOTFND) &&
+		    !(tvlv_handler->flags & BATADV_TVLV_HANDLER_CALLED))
 			tvlv_handler->ogm_handler(bat_priv, orig_node,
 						  cifnotfound, NULL, 0);
 
-		tvlv_handler->flags &= ~BATADV_TVLV_HANDLER_OGM_CALLED;
+		tvlv_handler->flags &= ~BATADV_TVLV_HANDLER_CALLED;
 	}
 	rcu_read_unlock();
 
@@ -477,58 +619,69 @@ int batadv_tvlv_containers_process(struct batadv_priv *bat_priv,
  * batadv_tvlv_ogm_receive - process an incoming ogm and call the appropriate
  *  handlers
  * @bat_priv: the bat priv with all the soft interface information
- * @batadv_ogm_packet: ogm packet containing the tvlv containers
+ * @skb: ogm packet containing the tvlv containers
  * @orig_node: orig node emitting the ogm packet
+ *
+ * Caller needs to ensure that the skb network header points to the appropriate
+ * OGM header.
  */
 void batadv_tvlv_ogm_receive(struct batadv_priv *bat_priv,
-			     struct batadv_ogm_packet *batadv_ogm_packet,
+			     const struct sk_buff *skb,
 			     struct batadv_orig_node *orig_node)
 {
+	struct batadv_ogm_packet *ogm_packet;
+	unsigned int tvlv_offset;
 	void *tvlv_value;
 	u16 tvlv_value_len;
 
-	if (!batadv_ogm_packet)
+	ogm_packet = (struct batadv_ogm_packet *)skb_network_header(skb);
+	if (!ogm_packet)
 		return;
 
-	tvlv_value_len = ntohs(batadv_ogm_packet->tvlv_len);
+	tvlv_value_len = ntohs(ogm_packet->tvlv_len);
 	if (!tvlv_value_len)
 		return;
 
-	tvlv_value = batadv_ogm_packet + 1;
+	tvlv_offset = skb_network_offset(skb) + sizeof(*ogm_packet);
+	tvlv_value = ogm_packet + 1;
 
 	batadv_tvlv_containers_process(bat_priv, true, orig_node, NULL, NULL,
 				       tvlv_value, tvlv_value_len);
+	batadv_tvlv_containers_process2(bat_priv, skb, BATADV_IV_OGM,
+					tvlv_offset, tvlv_value_len, orig_node);
 }
 
 /**
- * batadv_tvlv_handler_register - register tvlv handler based on the provided
- *  type and version (both need to match) for ogm tvlv payload and/or unicast
- *  payload
+ * batadv_tvlv_handler_register - register a tvlv handler
  * @bat_priv: the bat priv with all the soft interface information
- * @optr: ogm tvlv handler callback function. This function receives the orig
- *  node, flags and the tvlv content as argument to process.
- * @uptr: unicast tvlv handler callback function. This function receives the
- *  source & destination of the unicast packet as well as the tvlv content
- *  to process.
- * @type: tvlv handler type to be registered
- * @version: tvlv handler version to be registered
+ * @handler: TVLV handler callback function
+ * @packet_type: packet type to register this handler for
+ * @tvlv_type: tvlv handler type to be registered
+ * @tvlv_version: tvlv handler version to be registered
  * @flags: flags to enable or disable TVLV API behavior
+ *
+ * Registers a handler for incoming packets of the provided packet type.
+ * When a packet of this type with a matching TVLV (both tvlv type and version)
+ * is received then the registered handler is called with the according TVLV
+ * value, length and packet context.
+ *
+ * If 'flags' is set to BATADV_TVLV_HANDLER_CIFNOTFND:
+ * Then the handler might be called with an empty tvlv_value (NULL) and
+ * tvlv_value_len (zero) if a packet with a matching packet type but no
+ * matching TVLV was received.
  */
-void batadv_tvlv_handler_register(struct batadv_priv *bat_priv,
-				  void (*optr)(struct batadv_priv *bat_priv,
-					       struct batadv_orig_node *orig,
-					       u8 flags,
-					       void *tvlv_value,
-					       u16 tvlv_value_len),
-				  int (*uptr)(struct batadv_priv *bat_priv,
-					      u8 *src, u8 *dst,
-					      void *tvlv_value,
-					      u16 tvlv_value_len),
-				  u8 type, u8 version, u8 flags)
+void batadv_tvlv_handler_register2(struct batadv_priv *bat_priv,
+				   int (*handler)(struct batadv_priv *bat_priv,
+						  void *tvlv_value,
+						  u16 tvlv_value_len,
+						  void *ctx),
+				   u8 packet_type, u8 tvlv_type,
+				   u8 tvlv_version, u8 flags)
 {
 	struct batadv_tvlv_handler *tvlv_handler;
 
-	tvlv_handler = batadv_tvlv_handler_get(bat_priv, type, version);
+	tvlv_handler = batadv_tvlv_handler_get(bat_priv, packet_type, tvlv_type,
+					       tvlv_version);
 	if (tvlv_handler) {
 		batadv_tvlv_handler_put(tvlv_handler);
 		return;
@@ -538,10 +691,12 @@ void batadv_tvlv_handler_register(struct batadv_priv *bat_priv,
 	if (!tvlv_handler)
 		return;
 
-	tvlv_handler->ogm_handler = optr;
-	tvlv_handler->unicast_handler = uptr;
-	tvlv_handler->type = type;
-	tvlv_handler->version = version;
+	tvlv_handler->ogm_handler = NULL;
+	tvlv_handler->unicast_handler = NULL;
+	tvlv_handler->handler = handler;
+	tvlv_handler->packet_type = packet_type;
+	tvlv_handler->tvlv_type = tvlv_type;
+	tvlv_handler->tvlv_version = tvlv_version;
 	tvlv_handler->flags = flags;
 	kref_init(&tvlv_handler->refcount);
 	INIT_HLIST_NODE(&tvlv_handler->list);
@@ -556,18 +711,106 @@ void batadv_tvlv_handler_register(struct batadv_priv *bat_priv,
 }
 
 /**
- * batadv_tvlv_handler_unregister - unregister tvlv handler based on the
- *  provided type and version (both need to match)
+ * batadv_tvlv_handler_register - register tvlv handler based on the provided
+ *  type and version (both need to match) for ogm tvlv payload and/or unicast
+ *  payload
  * @bat_priv: the bat priv with all the soft interface information
- * @type: tvlv handler type to be unregistered
- * @version: tvlv handler version to be unregistered
+ * @optr: ogm tvlv handler callback function. This function receives the orig
+ *  node, flags and the tvlv content as argument to process.
+ * @uptr: unicast tvlv handler callback function. This function receives the
+ *  source & destination of the unicast packet as well as the tvlv content
+ *  to process.
+ * @tvlv_type: tvlv handler type to be registered
+ * @tvlv_version: tvlv handler version to be registered
+ * @flags: flags to enable or disable TVLV API behavior
  */
-void batadv_tvlv_handler_unregister(struct batadv_priv *bat_priv,
-				    u8 type, u8 version)
+void batadv_tvlv_handler_register(struct batadv_priv *bat_priv,
+				  void (*optr)(struct batadv_priv *bat_priv,
+					       struct batadv_orig_node *orig,
+					       u8 flags,
+					       void *tvlv_value,
+					       u16 tvlv_value_len),
+				  int (*uptr)(struct batadv_priv *bat_priv,
+					      u8 *src, u8 *dst,
+					      void *tvlv_value,
+					      u16 tvlv_value_len),
+				  u8 tvlv_type, u8 tvlv_version,
+				  u8 flags)
 {
 	struct batadv_tvlv_handler *tvlv_handler;
 
-	tvlv_handler = batadv_tvlv_handler_get(bat_priv, type, version);
+	tvlv_handler = batadv_tvlv_handler_get(bat_priv, -1, tvlv_type,
+					       tvlv_version);
+	if (tvlv_handler) {
+		batadv_tvlv_handler_put(tvlv_handler);
+		return;
+	}
+
+	tvlv_handler = kzalloc(sizeof(*tvlv_handler), GFP_ATOMIC);
+	if (!tvlv_handler)
+		return;
+
+	tvlv_handler->ogm_handler = optr;
+	tvlv_handler->unicast_handler = uptr;
+	tvlv_handler->handler = NULL;
+	tvlv_handler->packet_type = -1;
+	tvlv_handler->tvlv_type = tvlv_type;
+	tvlv_handler->tvlv_version = tvlv_version;
+	tvlv_handler->flags = flags;
+	kref_init(&tvlv_handler->refcount);
+	INIT_HLIST_NODE(&tvlv_handler->list);
+
+	spin_lock_bh(&bat_priv->tvlv.handler_list_lock);
+	kref_get(&tvlv_handler->refcount);
+	hlist_add_head_rcu(&tvlv_handler->list, &bat_priv->tvlv.handler_list);
+	spin_unlock_bh(&bat_priv->tvlv.handler_list_lock);
+
+	/* don't return reference to new tvlv_handler */
+	batadv_tvlv_handler_put(tvlv_handler);
+}
+
+/**
+ * batadv_tvlv_handler_unregister2 - unregister a tvlv handler
+ * @bat_priv: the bat priv with all the soft interface information
+ * @packet_type: packet type to unregister for
+ * @tvlv_type: tvlv handler type to be unregistered
+ * @tvlv_version: tvlv handler version to be unregistered
+ *
+ * Unregisters a TVLV handler based on the provided packet type, tvlv type
+ * and version (all need to match).
+ */
+void batadv_tvlv_handler_unregister2(struct batadv_priv *bat_priv,
+				     u8 packet_type, u8 tvlv_type,
+				     u8 tvlv_version)
+{
+	struct batadv_tvlv_handler *tvlv_handler;
+
+	tvlv_handler = batadv_tvlv_handler_get(bat_priv, packet_type, tvlv_type,
+					       tvlv_version);
+	if (!tvlv_handler)
+		return;
+
+	batadv_tvlv_handler_put(tvlv_handler);
+	spin_lock_bh(&bat_priv->tvlv.handler_list_lock);
+	hlist_del_rcu(&tvlv_handler->list);
+	spin_unlock_bh(&bat_priv->tvlv.handler_list_lock);
+	batadv_tvlv_handler_put(tvlv_handler);
+}
+
+/**
+ * batadv_tvlv_handler_unregister - unregister tvlv handler based on the
+ *  provided type and version (both need to match)
+ * @bat_priv: the bat priv with all the soft interface information
+ * @tvlv_type: tvlv handler type to be unregistered
+ * @tvlv_version: tvlv handler version to be unregistered
+ */
+void batadv_tvlv_handler_unregister(struct batadv_priv *bat_priv,
+				    u8 tvlv_type, u8 tvlv_version)
+{
+	struct batadv_tvlv_handler *tvlv_handler;
+
+	tvlv_handler = batadv_tvlv_handler_get(bat_priv, -1, tvlv_type,
+					       tvlv_version);
 	if (!tvlv_handler)
 		return;
 

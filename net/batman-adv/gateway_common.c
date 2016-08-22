@@ -207,25 +207,26 @@ ssize_t batadv_gw_bandwidth_set(struct net_device *net_dev, char *buff,
 }
 
 /**
- * batadv_gw_tvlv_ogm_handler_v1 - process incoming gateway tvlv container
+ * batadv_gw_tvlv_ogm_handler - process incoming gateway tvlv container
  * @bat_priv: the bat priv with all the soft interface information
- * @orig: the orig_node of the ogm
- * @flags: flags indicating the tvlv state (see batadv_tvlv_handler_flags)
  * @tvlv_value: tvlv buffer containing the gateway data
  * @tvlv_value_len: tvlv buffer length
+ * @ctx: handler specific context information (here: orig_node)
+ *
+ * Return: Always NET_RX_SUCCESS.
  */
-static void batadv_gw_tvlv_ogm_handler_v1(struct batadv_priv *bat_priv,
-					  struct batadv_orig_node *orig,
-					  u8 flags,
-					  void *tvlv_value, u16 tvlv_value_len)
+static int batadv_gw_tvlv_ogm_handler(struct batadv_priv *bat_priv,
+				      void *tvlv_value,
+				      u16 tvlv_value_len,
+				      void *ctx)
 {
+	struct batadv_orig_node *orig_node = ctx;
 	struct batadv_tvlv_gateway_data gateway, *gateway_ptr;
 
-	/* only fetch the tvlv value if the handler wasn't called via the
-	 * CIFNOTFND flag and if there is data to fetch
+	/* might either be too small due to a broken packet,
+	 * or zero because no matching TVLV was found in the provided OGM
 	 */
-	if ((flags & BATADV_TVLV_HANDLER_OGM_CIFNOTFND) ||
-	    (tvlv_value_len < sizeof(gateway))) {
+	if (tvlv_value_len < sizeof(gateway)) {
 		gateway.bandwidth_down = 0;
 		gateway.bandwidth_up = 0;
 	} else {
@@ -239,12 +240,14 @@ static void batadv_gw_tvlv_ogm_handler_v1(struct batadv_priv *bat_priv,
 		}
 	}
 
-	batadv_gw_node_update(bat_priv, orig, &gateway);
+	batadv_gw_node_update(bat_priv, orig_node, &gateway);
 
 	/* restart gateway selection */
 	if ((gateway.bandwidth_down != 0) &&
 	    (atomic_read(&bat_priv->gw.mode) == BATADV_GW_MODE_CLIENT))
-		batadv_gw_check_election(bat_priv, orig);
+		batadv_gw_check_election(bat_priv, orig_node);
+
+	return NET_RX_SUCCESS;
 }
 
 /**
@@ -258,9 +261,12 @@ void batadv_gw_init(struct batadv_priv *bat_priv)
 	else
 		atomic_set(&bat_priv->gw.sel_class, 1);
 
-	batadv_tvlv_handler_register(bat_priv, batadv_gw_tvlv_ogm_handler_v1,
-				     NULL, BATADV_TVLV_GW, 1,
-				     BATADV_TVLV_HANDLER_OGM_CIFNOTFND);
+	batadv_tvlv_handler_register2(bat_priv, batadv_gw_tvlv_ogm_handler,
+				      BATADV_IV_OGM, BATADV_TVLV_GW, 1,
+				      BATADV_TVLV_HANDLER_CIFNOTFND);
+	batadv_tvlv_handler_register2(bat_priv, batadv_gw_tvlv_ogm_handler,
+				      BATADV_OGM2, BATADV_TVLV_GW, 1,
+				      BATADV_TVLV_HANDLER_CIFNOTFND);
 }
 
 /**
@@ -270,5 +276,9 @@ void batadv_gw_init(struct batadv_priv *bat_priv)
 void batadv_gw_free(struct batadv_priv *bat_priv)
 {
 	batadv_tvlv_container_unregister(bat_priv, BATADV_TVLV_GW, 1);
-	batadv_tvlv_handler_unregister(bat_priv, BATADV_TVLV_GW, 1);
+
+	batadv_tvlv_handler_unregister2(bat_priv, BATADV_IV_OGM, BATADV_TVLV_GW,
+					1);
+	batadv_tvlv_handler_unregister2(bat_priv, BATADV_OGM2, BATADV_TVLV_GW,
+					1);
 }

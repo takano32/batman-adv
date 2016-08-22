@@ -22,7 +22,7 @@
 
 #include <linux/types.h>
 
-struct batadv_ogm_packet;
+struct sk_buff;
 
 void batadv_tvlv_container_register(struct batadv_priv *bat_priv,
 				    u8 type, u8 version,
@@ -31,11 +31,18 @@ u16 batadv_tvlv_container_ogm_append(struct batadv_priv *bat_priv,
 				     unsigned char **packet_buff,
 				     int *packet_buff_len, int packet_min_len);
 void batadv_tvlv_ogm_receive(struct batadv_priv *bat_priv,
-			     struct batadv_ogm_packet *batadv_ogm_packet,
+			     const struct sk_buff *skb,
 			     struct batadv_orig_node *orig_node);
 void batadv_tvlv_container_unregister(struct batadv_priv *bat_priv,
 				      u8 type, u8 version);
 
+void batadv_tvlv_handler_register2(struct batadv_priv *bat_priv,
+				   int (*handler)(struct batadv_priv *bat_priv,
+						  void *tvlv_value,
+						  u16 tvlv_value_len,
+						  void *ctx),
+				   u8 packet_type, u8 tvlv_type,
+				   u8 tvlv_version, u8 flags);
 void batadv_tvlv_handler_register(struct batadv_priv *bat_priv,
 				  void (*optr)(struct batadv_priv *bat_priv,
 					       struct batadv_orig_node *orig,
@@ -46,14 +53,21 @@ void batadv_tvlv_handler_register(struct batadv_priv *bat_priv,
 					      u8 *src, u8 *dst,
 					      void *tvlv_value,
 					      u16 tvlv_value_len),
-				  u8 type, u8 version, u8 flags);
+				  u8 tvlv_type, u8 tvlv_version, u8 flags);
+void batadv_tvlv_handler_unregister2(struct batadv_priv *bat_priv,
+				     u8 packet_type, u8 tvlv_type,
+				     u8 tvlv_version);
 void batadv_tvlv_handler_unregister(struct batadv_priv *bat_priv,
-				    u8 type, u8 version);
+				    u8 tvlv_type, u8 tvlv_version);
 int batadv_tvlv_containers_process(struct batadv_priv *bat_priv,
 				   bool ogm_source,
 				   struct batadv_orig_node *orig_node,
 				   u8 *src, u8 *dst,
 				   void *tvlv_buff, u16 tvlv_buff_len);
+int batadv_tvlv_containers_process2(struct batadv_priv *bat_priv,
+				    const struct sk_buff *skb, u8 packet_type,
+				    unsigned int tvlv_offset,
+				    u16 tvlv_value_len, void *ctx);
 void batadv_tvlv_unicast_send(struct batadv_priv *bat_priv, u8 *src,
 			      u8 *dst, u8 type, u8 version,
 			      void *tvlv_value, u16 tvlv_value_len);
