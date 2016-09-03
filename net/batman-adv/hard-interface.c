@@ -380,8 +380,9 @@ bool batadv_is_wifi_hardif(struct batadv_hard_iface *hard_iface)
  * batadv_hardif_no_broadcast - check whether (re)broadcast is necessary
  * @if_outgoing: the outgoing interface checked and considered for (re)broadcast
  * @orig_addr: the originator of this packet
- * @orig_neigh: originator address of the forwarder we just got the packet from
- *  (NULL if we originated)
+ * @hardif_neigh: the neighbor we got this packet from (NULL if we originated)
+ * @inverse_metric: the metric direction to use (e.g. "true" for OGMs, "false"
+ *  for broadcast packets
  *
  * Checks whether a packet needs to be (re)broadcasted on the given interface.
  *
@@ -389,12 +390,16 @@ bool batadv_is_wifi_hardif(struct batadv_hard_iface *hard_iface)
  *	BATADV_HARDIF_BCAST_NORECIPIENT: No neighbor on interface
  *	BATADV_HARDIF_BCAST_DUPFWD: Just one neighbor, but it is the forwarder
  *	BATADV_HARDIF_BCAST_DUPORIG: Just one neighbor, but it is the originator
+ *	BATADV_HARDIF_BCAST_WORSENHH: ELP detected a worse neighborhood metric
  *	BATADV_HARDIF_BCAST_OK: Several neighbors, must broadcast
  */
 int batadv_hardif_no_broadcast(struct batadv_hard_iface *if_outgoing,
-			       u8 *orig_addr, u8 *orig_neigh)
+			       u8 *orig_addr,
+			       struct batadv_hardif_neigh_node *hardif_neigh,
+			       bool inverse_metric)
 {
-	struct batadv_hardif_neigh_node *hardif_neigh;
+	struct batadv_priv *bat_priv = netdev_priv(if_outgoing->soft_iface);
+	struct batadv_hardif_neigh_node *hardif_neigh_cmp;
 	struct hlist_node *first;
 	int ret = BATADV_HARDIF_BCAST_OK;
 
@@ -407,21 +412,29 @@ int batadv_hardif_no_broadcast(struct batadv_hard_iface *if_outgoing,
 		goto out;
 	}
 
-	/* >1 neighbors -> (re)brodcast */
-	if (rcu_dereference(hlist_next_rcu(first)))
-		goto out;
+	/* single neighbor checks */
+	if (!rcu_dereference(hlist_next_rcu(first)) && hardif_neigh) {
+		hardif_neigh_cmp = hlist_entry(first,
+					       struct batadv_hardif_neigh_node,
+					       list);
 
-	hardif_neigh = hlist_entry(first, struct batadv_hardif_neigh_node,
-				   list);
-
-	/* 1 neighbor, is the originator -> no rebroadcast */
-	if (orig_addr && batadv_compare_eth(hardif_neigh->orig, orig_addr)) {
-		ret = BATADV_HARDIF_BCAST_DUPORIG;
-	/* 1 neighbor, is the one we received from -> no rebroadcast */
-	} else if (orig_neigh &&
-		   batadv_compare_eth(hardif_neigh->orig, orig_neigh)) {
-		ret = BATADV_HARDIF_BCAST_DUPFWD;
+		/* 1 neighbor, is the originator -> no rebroadcast */
+		if (batadv_compare_eth(hardif_neigh_cmp->orig, orig_addr)) {
+			ret = BATADV_HARDIF_BCAST_DUPORIG;
+			goto out;
+		/* 1 neighbor, is the one we received from -> no rebroadcast */
+		} else if (batadv_compare_eth(hardif_neigh_cmp->orig,
+					      hardif_neigh->orig)) {
+			ret = BATADV_HARDIF_BCAST_DUPFWD;
+			goto out;
+		}
 	}
+
+	if (bat_priv->algo_ops->neigh.hardif_no_broadcast &&
+	    bat_priv->algo_ops->neigh.hardif_no_broadcast(if_outgoing,
+							  hardif_neigh,
+							  inverse_metric))
+		ret = BATADV_HARDIF_BCAST_WORSENHH;
 
 out:
 	rcu_read_unlock();

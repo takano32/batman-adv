@@ -20,6 +20,7 @@
 
 #include <crypto/hash.h>
 #include <linux/atomic.h>
+#include <linux/bug.h>
 #include <linux/byteorder/generic.h>
 #include <linux/err.h>
 #include <linux/errno.h>
@@ -51,6 +52,7 @@
 #include "packet.h"
 #include "routing.h"
 #include "send.h"
+#include "tvlv.h"
 
 static struct crypto_shash *tfm;
 
@@ -88,6 +90,8 @@ static void batadv_v_elp_update_neigh_hash(struct batadv_hard_iface *hard_iface)
 	u8 *own_addr = hard_iface->net_dev->dev_addr;
 	u32 min_throughput = U32_MAX;
 	u32 max_throughput = 0;
+	u32 min_throughput_other = U32_MAX;
+	u32 max_throughput_other = 0;
 	u32 throughput;
 	int ret;
 
@@ -129,6 +133,16 @@ static void batadv_v_elp_update_neigh_hash(struct batadv_hard_iface *hard_iface)
 
 		if (throughput > max_throughput)
 			max_throughput = throughput;
+
+		throughput = hardif_neigh->bat_v.min_throughput;
+
+		if (throughput < min_throughput_other)
+			min_throughput_other = throughput;
+
+		throughput = hardif_neigh->bat_v.max_throughput;
+
+		if (throughput > max_throughput_other)
+			max_throughput_other = throughput;
 	}
 	rcu_read_unlock();
 
@@ -144,14 +158,18 @@ static void batadv_v_elp_update_neigh_hash(struct batadv_hard_iface *hard_iface)
 
 	hard_iface->bat_v.min_throughput = min_throughput;
 	hard_iface->bat_v.max_throughput = max_throughput;
+	hard_iface->bat_v.min_throughput_other = min_throughput_other;
+	hard_iface->bat_v.max_throughput_other = max_throughput_other;
 
 	batadv_dbg(BATADV_DBG_BATMAN, bat_priv,
-		   "Updated neighbor hash on interface %s: %*phN, min_through: %u kbit/s, max_through: %u kbit/s\n",
+		   "Updated neighbor hash on interface %s: %*phN, min_through: %u kbit/s, max_through: %u kbit/s, min_through_other: %u kbit/s, max_through_other: %u kbit/s\n",
 		   hard_iface->net_dev->name,
 		   (int)sizeof(hard_iface->bat_v.neigh_hash),
 		   hard_iface->bat_v.neigh_hash,
 		   hard_iface->bat_v.min_throughput * 100,
-		   hard_iface->bat_v.max_throughput * 100);
+		   hard_iface->bat_v.max_throughput * 100,
+		   hard_iface->bat_v.min_throughput_other * 100,
+		   hard_iface->bat_v.max_throughput_other * 100);
 
 	return;
 
@@ -160,6 +178,8 @@ err:
 	       sizeof(hard_iface->bat_v.neigh_hash));
 	hard_iface->bat_v.min_throughput = 0;
 	hard_iface->bat_v.max_throughput = U32_MAX;
+	hard_iface->bat_v.min_throughput_other = 0;
+	hard_iface->bat_v.max_throughput_other = U32_MAX;
 
 	pr_warn_once("An error occurred while calculating neighbor hash for %s\n",
 		     hard_iface->net_dev->name);
@@ -581,8 +601,27 @@ void batadv_v_elp_primary_iface_set(struct batadv_hard_iface *primary_iface)
 }
 
 /**
+ * batadv_v_elp_get_tvlv_len - get tvlv_len of an elp packet
+ * @skb: the elp packet to parse
+ *
+ * Return: Length of the tvlv data of the given skb.
+ */
+static u16 batadv_v_elp_get_tvlv_len(struct sk_buff *skb)
+{
+	unsigned int tvlv_len_offset;
+	__be16 *tvlv_len, tvlv_len_buff;
+
+	tvlv_len_offset = offsetof(struct batadv_elp_packet, tvlv_len);
+	tvlv_len = skb_header_pointer(skb, tvlv_len_offset,
+				      sizeof(tvlv_len_buff), &tvlv_len_buff);
+
+	return tvlv_len ? ntohs(*tvlv_len) : 0;
+}
+
+/**
  * batadv_v_elp_neigh_update - update an ELP neighbour node
  * @bat_priv: the bat priv with all the soft interface information
+ * @skb: the received packet
  * @neigh_addr: the neighbour interface address
  * @if_incoming: the interface the packet was received through
  * @elp_packet: the received ELP packet
@@ -591,6 +630,7 @@ void batadv_v_elp_primary_iface_set(struct batadv_hard_iface *primary_iface)
  * ELP packet.
  */
 static void batadv_v_elp_neigh_update(struct batadv_priv *bat_priv,
+				      struct sk_buff *skb,
 				      u8 *neigh_addr,
 				      struct batadv_hard_iface *if_incoming,
 				      struct batadv_elp_packet *elp_packet)
@@ -599,6 +639,8 @@ static void batadv_v_elp_neigh_update(struct batadv_priv *bat_priv,
 	struct batadv_neigh_node *neigh;
 	struct batadv_orig_node *orig_neigh;
 	struct batadv_hardif_neigh_node *hardif_neigh;
+	unsigned int tvlv_offset = sizeof(*elp_packet);
+	u16 tvlv_len = batadv_v_elp_get_tvlv_len(skb);
 	s32 seqno_diff;
 	s32 elp_latest_seqno;
 
@@ -614,6 +656,9 @@ static void batadv_v_elp_neigh_update(struct batadv_priv *bat_priv,
 	hardif_neigh = batadv_hardif_neigh_get(if_incoming, neigh_addr);
 	if (!hardif_neigh)
 		goto neigh_free;
+
+	batadv_tvlv_containers_process2(bat_priv, skb, BATADV_ELP, tvlv_offset,
+					tvlv_len, hardif_neigh);
 
 	elp_latest_seqno = hardif_neigh->bat_v.elp_latest_seqno;
 	seqno_diff = ntohl(elp_packet->seqno) - elp_latest_seqno;
@@ -686,7 +731,7 @@ int batadv_v_elp_packet_recv(struct sk_buff *skb,
 	if (!primary_if)
 		goto free_skb;
 
-	batadv_v_elp_neigh_update(bat_priv, ethhdr->h_source, if_incoming,
+	batadv_v_elp_neigh_update(bat_priv, skb, ethhdr->h_source, if_incoming,
 				  elp_packet);
 
 	ret = NET_RX_SUCCESS;
@@ -699,6 +744,259 @@ free_skb:
 		kfree_skb(skb);
 
 	return ret;
+}
+
+/**
+ * batadv_v_elp_nhh_cmp - compares a neighbor's hash with the own one
+ * @hardif_neigh: the hardif_neigh to compare with
+ *
+ * Checks whether the neighbor hash a neighbor advertised matches our own
+ * hash, the one we computed for the same interface.
+ *
+ * Return: True, if the hashes match, false otherwise.
+ */
+bool batadv_v_elp_nhh_cmp(struct batadv_hardif_neigh_node *hardif_neigh)
+{
+	return !memcmp(hardif_neigh->if_incoming->bat_v.neigh_hash,
+		       hardif_neigh->bat_v.neigh_hash,
+		       sizeof(hardif_neigh->bat_v.neigh_hash));
+}
+
+/**
+ * batadv_v_elp_rx_ingress_bad - check for ingress RX-metric bottlenecks
+ * @hardif_neigh: the hardif_neigh a packet was received from
+ *
+ * Checks whether we could potentially be a better path for packets
+ * coming from the given hardif_neigh to any neighbor on the same interface.
+ * Or whether there is some bottleneck making us unfavourable to become
+ * a forwarder for packets from this hardif_neigh.
+ *
+ * More specifically, this function checks whether our ingress side, that
+ * is the connection from us to the given hardif_neigh, is worse than the
+ * direct transmission any other neighbor to this hardif_neigh.
+ *
+ * Return: True if our incoming side a bottleneck, false otherwise.
+ */
+
+bool batadv_v_elp_rx_ingress_bad(struct batadv_hardif_neigh_node *hardif_neigh)
+{
+	struct batadv_hard_iface *iface = hardif_neigh->if_incoming;
+	struct batadv_priv *bat_priv = netdev_priv(iface->soft_iface);
+	u32 throughput = ewma_throughput_read(&hardif_neigh->bat_v.throughput);
+	u32 limit = iface->bat_v.min_throughput_other;
+
+	throughput = batadv_v_forward_penalty(bat_priv, iface, iface,
+					      throughput);
+
+	return throughput < limit;
+}
+
+/**
+ * batadv_v_elp_rx_egress_bad - check for egress RX-metric bottlenecks
+ * @hardif_neigh: the hardif_neigh a packet was received from
+ *
+ * Checks whether we could potentially be a better path for packets
+ * coming from the given hardif_neigh to any neighbor on the same interface.
+ * Or whether there is some bottleneck making us unfavourable to become
+ * a forwarder for packets from this hardif_neigh.
+ *
+ * More specifically, this function checks whether our egress side, that is
+ * the connection from from any neighbor other than hardif_neigh to us, is
+ * worse than the direct transmission of any other neighbor to this
+ * hardif_neigh.
+ *
+ * Return: True if our outgoing side a bottleneck, false otherwise.
+ */
+bool batadv_v_elp_rx_egress_bad(struct batadv_hardif_neigh_node *hardif_neigh)
+{
+	struct batadv_hard_iface *iface = hardif_neigh->if_incoming;
+	struct batadv_priv *bat_priv = netdev_priv(iface->soft_iface);
+	u32 throughput = iface->bat_v.max_throughput_other;
+	u32 limit = iface->bat_v.min_throughput_other;
+
+	throughput = batadv_v_forward_penalty(bat_priv, iface, iface,
+					      throughput);
+
+	return throughput < limit;
+}
+
+/**
+ * batadv_v_elp_tx_ingress_bad - check for ingress TX-metric bottlenecks
+ * @hardif_neigh: the hardif_neigh a packet was received from
+ *
+ * Checks whether we could potentially be a better path for packets
+ * coming from the given hardif_neigh to any neighbor on the same interface.
+ * Or whether there is some bottleneck making us unfavourable to become
+ * a forwarder for packets from this hardif_neigh.
+ *
+ * More specifically, this function checks whether our ingress side, that
+ * is the connection from the given hardif_neigh to us, is worse than the
+ * direct transmission of the hardif_neigh to any other neighbor.
+ *
+ * Return: True if our incoming side a bottleneck, false otherwise.
+ */
+bool batadv_v_elp_tx_ingress_bad(struct batadv_hardif_neigh_node *hardif_neigh)
+{
+	struct batadv_hard_iface *iface = hardif_neigh->if_incoming;
+	struct batadv_priv *bat_priv = netdev_priv(iface->soft_iface);
+	u32 throughput = hardif_neigh->bat_v.max_throughput;
+	u32 limit = hardif_neigh->bat_v.min_throughput;
+
+	throughput = batadv_v_forward_penalty(bat_priv, iface, iface,
+					      throughput);
+
+	return throughput < limit;
+}
+
+/**
+ * batadv_v_elp_tx_egress_bad - check for egress TX-metric bottlenecks
+ * @hardif_neigh: the hardif_neigh a packet was received from
+ *
+ * Checks whether we could potentially be a better path for packets
+ * coming from the given hardif_neigh to any neighbor on the same interface.
+ * Or whether there is some bottleneck making us unfavourable to become
+ * a forwarder for packets from this hardif_neigh.
+ *
+ * More specifically, this function checks whether our egress side, that is
+ * the connection from us to any neighbor other than hardif_neigh, is
+ * worse than the direct transmission of the hardif_neigh to any other neighbor.
+ *
+ * Return: True if our outgoing side a bottleneck, false otherwise.
+ */
+bool batadv_v_elp_tx_egress_bad(struct batadv_hardif_neigh_node *hardif_neigh)
+{
+	struct batadv_hard_iface *iface = hardif_neigh->if_incoming;
+	struct batadv_priv *bat_priv = netdev_priv(iface->soft_iface);
+	u32 throughput = iface->bat_v.max_throughput;
+	u32 limit = hardif_neigh->bat_v.min_throughput;
+
+	throughput = batadv_v_forward_penalty(bat_priv, iface, iface,
+					      throughput);
+
+	return throughput < limit;
+}
+
+/**
+ * batadv_v_elp_no_broadcast - checks whether a rebroadcast can be avoided
+ * @if_outgoing: the outgoing interface to be considered for rebroadcast
+ * @hardif_neigh: the hardif_neigh the packet came from
+ * @inverse_metric: the metric direction to use (e.g. "true" for OGMs, "false"
+ *  for broadcast packets
+ *
+ * This function checks whether with the information available to/from ELP, a
+ * rebroadcast of an OGM2 or broadcast packet on an interface can be
+ * avoided.
+ *
+ * The inverse_metric parameter indicates whether the considered packet
+ * should follow the best RX (inverse_metric = "true", e.g. OGMs) or TX
+ * path (inverse_metric = "false", e.g. broadcast packets).
+ *
+ * Return: True, if a rebroadcast can be avoided, false otherwise.
+ */
+bool batadv_v_elp_no_broadcast(struct batadv_hard_iface *if_outgoing,
+			       struct batadv_hardif_neigh_node *hardif_neigh,
+			       bool inverse_metric)
+{
+	if (!if_outgoing || !hardif_neigh)
+		return false;
+
+	/* ELP does not provide information across inferface domains */
+	if (if_outgoing != hardif_neigh->if_incoming)
+		return false;
+
+	if (!batadv_v_elp_nhh_cmp(hardif_neigh))
+		return false;
+
+	/* same neighborhood, is a better path possible? */
+	if (inverse_metric) {
+		/* OGM2 check */
+		if (batadv_v_elp_rx_ingress_bad(hardif_neigh) ||
+		    batadv_v_elp_rx_egress_bad(hardif_neigh))
+			return true;
+	} else {
+		/* broadcast packet check */
+		if (batadv_v_elp_tx_ingress_bad(hardif_neigh) ||
+		    batadv_v_elp_tx_egress_bad(hardif_neigh))
+			return true;
+	}
+
+	return false;
+}
+
+/**
+ * batadv_v_elp_tvlv_handler_nhh - process incoming NHH tvlv container
+ * @bat_priv: the bat priv with all the soft interface information
+ * @tvlv_value: tvlv buffer containing the neighborhood hash data
+ * @tvlv_value_len: tvlv buffer length
+ * @ctx: handler specific context information (here: hardif_neigh)
+ *
+ * Return: NET_RX_DROP on parsing errors, NET_RX_SUCCESS otherwise.
+ */
+static int batadv_v_elp_tvlv_handler_nhh(struct batadv_priv *bat_priv,
+					 void *tvlv_value, u16 tvlv_value_len,
+					 void *ctx)
+{
+	struct batadv_hardif_neigh_node *hardif_neigh = ctx;
+	struct batadv_tvlv_nhh_data *nhh_data;
+	u32 min_throughput = 0;
+	u32 max_throughput = U32_MAX;
+
+	if (WARN_ON(!hardif_neigh))
+		return NET_RX_DROP;
+
+	if (tvlv_value) {
+		if (tvlv_value_len < sizeof(*nhh_data))
+			return NET_RX_DROP;
+
+		nhh_data = (struct batadv_tvlv_nhh_data *)tvlv_value;
+
+		memcpy(hardif_neigh->bat_v.neigh_hash, nhh_data->neigh_hash,
+		       sizeof(hardif_neigh->bat_v.neigh_hash));
+		min_throughput = ntohl(nhh_data->min_throughput);
+		max_throughput = ntohl(nhh_data->max_throughput);
+	} else {
+		memset(hardif_neigh->bat_v.neigh_hash, 0,
+		       sizeof(hardif_neigh->bat_v.neigh_hash));
+	}
+
+	hardif_neigh->bat_v.min_throughput = min_throughput;
+	hardif_neigh->bat_v.max_throughput = max_throughput;
+
+	batadv_dbg(BATADV_DBG_BATMAN, bat_priv,
+		   "Got neighbor hash on interface %s from %pM: %*phN, min_through: %u kbit/s, max_through: %u kbit/s\n",
+		   hardif_neigh->if_incoming->net_dev->name,
+		   hardif_neigh->addr,
+		   (int)sizeof(hardif_neigh->bat_v.neigh_hash),
+		   hardif_neigh->bat_v.neigh_hash,
+		   hardif_neigh->bat_v.min_throughput * 100,
+		   hardif_neigh->bat_v.max_throughput * 100);
+
+	return NET_RX_SUCCESS;
+}
+
+/**
+ * batadv_v_elp_mesh_init - initialize the ELP private resources for a mesh
+ * @bat_priv: the object representing the mesh interface to initialise
+ *
+ * Return: Always returns 0.
+ */
+int batadv_v_elp_mesh_init(struct batadv_priv *bat_priv)
+{
+	batadv_tvlv_handler_register2(bat_priv, batadv_v_elp_tvlv_handler_nhh,
+				      BATADV_ELP, BATADV_TVLV_NHH, 1,
+				      BATADV_TVLV_HANDLER_CIFNOTFND);
+
+	return 0;
+}
+
+/**
+ * batadv_v_elp_mesh_free - free the ELP private resources for a mesh
+ * @bat_priv: the object representing the mesh interface to free
+ */
+void batadv_v_elp_mesh_free(struct batadv_priv *bat_priv)
+{
+	batadv_tvlv_handler_unregister2(bat_priv, BATADV_ELP, BATADV_TVLV_NHH,
+					1);
 }
 
 /**

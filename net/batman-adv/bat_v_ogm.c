@@ -183,7 +183,7 @@ static void batadv_v_ogm_send(struct work_struct *work)
 		if (!kref_get_unless_zero(&hard_iface->refcount))
 			continue;
 
-		ret = batadv_hardif_no_broadcast(hard_iface, NULL, NULL);
+		ret = batadv_hardif_no_broadcast(hard_iface, NULL, NULL, true);
 		if (ret) {
 			char *type;
 
@@ -196,6 +196,9 @@ static void batadv_v_ogm_send(struct work_struct *work)
 				break;
 			case BATADV_HARDIF_BCAST_DUPORIG:
 				type = "single neighbor is originator";
+				break;
+			case BATADV_HARDIF_BCAST_WORSENHH:
+				type = "worse neighborhood metric";
 				break;
 			default:
 				type = "unknown";
@@ -289,10 +292,10 @@ void batadv_v_ogm_primary_iface_set(struct batadv_hard_iface *primary_iface)
  *
  * Return: the penalised throughput metric.
  */
-static u32 batadv_v_forward_penalty(struct batadv_priv *bat_priv,
-				    struct batadv_hard_iface *if_incoming,
-				    struct batadv_hard_iface *if_outgoing,
-				    u32 throughput)
+u32 batadv_v_forward_penalty(struct batadv_priv *bat_priv,
+			     struct batadv_hard_iface *if_incoming,
+			     struct batadv_hard_iface *if_outgoing,
+			     u32 throughput)
 {
 	int hop_penalty = atomic_read(&bat_priv->hop_penalty);
 	int hop_penalty_max = BATADV_TQ_MAX_VALUE;
@@ -752,7 +755,7 @@ static void batadv_v_ogm_process(struct sk_buff *skb, int ogm_offset,
 
 		ret = batadv_hardif_no_broadcast(hard_iface,
 						 ogm_packet->orig,
-						 hardif_neigh->orig);
+						 hardif_neigh, true);
 
 		if (ret) {
 			char *type;
@@ -766,6 +769,9 @@ static void batadv_v_ogm_process(struct sk_buff *skb, int ogm_offset,
 				break;
 			case BATADV_HARDIF_BCAST_DUPORIG:
 				type = "single neighbor is originator";
+				break;
+			case BATADV_HARDIF_BCAST_WORSENHH:
+				type = "worse neighborhood metric";
 				break;
 			default:
 				type = "unknown";

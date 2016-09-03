@@ -126,6 +126,9 @@ static void
 batadv_v_hardif_neigh_init(struct batadv_hardif_neigh_node *hardif_neigh)
 {
 	ewma_throughput_init(&hardif_neigh->bat_v.throughput);
+	hardif_neigh->bat_v.min_throughput = 0;
+	memset(hardif_neigh->bat_v.neigh_hash, 0,
+	       sizeof(hardif_neigh->bat_v.neigh_hash));
 	INIT_WORK(&hardif_neigh->bat_v.metric_work,
 		  batadv_v_elp_throughput_metric_update);
 }
@@ -172,14 +175,33 @@ batadv_v_hardif_neigh_print(struct seq_file *seq,
 {
 	int last_secs, last_msecs;
 	u32 throughput;
+	char nhh_avoid_ogm = '.', nhh_avoid_bcast = '.';
+	bool same_hash;
+
+	same_hash = batadv_v_elp_nhh_cmp(hardif_neigh);
+
+	if (same_hash) {
+		if (batadv_v_elp_rx_ingress_bad(hardif_neigh))
+			nhh_avoid_ogm = 'A';
+
+		if (batadv_v_elp_rx_egress_bad(hardif_neigh))
+			nhh_avoid_ogm = (nhh_avoid_ogm == '.') ? 'B' : 'C';
+
+		if (batadv_v_elp_tx_ingress_bad(hardif_neigh))
+			nhh_avoid_bcast = 'X';
+
+		if (batadv_v_elp_tx_egress_bad(hardif_neigh))
+			nhh_avoid_bcast = (nhh_avoid_bcast == '.') ? 'Y' : 'Z';
+	}
 
 	last_secs = jiffies_to_msecs(jiffies - hardif_neigh->last_seen) / 1000;
 	last_msecs = jiffies_to_msecs(jiffies - hardif_neigh->last_seen) % 1000;
 	throughput = ewma_throughput_read(&hardif_neigh->bat_v.throughput);
 
-	seq_printf(seq, "%pM %4i.%03is (%9u.%1u) [%10s]\n",
+	seq_printf(seq, "%pM %4i.%03is (%9u.%1u) [%10s]     [%c%c%c]\n",
 		   hardif_neigh->addr, last_secs, last_msecs, throughput / 10,
-		   throughput % 10, hardif_neigh->if_incoming->net_dev->name);
+		   throughput % 10, hardif_neigh->if_incoming->net_dev->name,
+		   same_hash ? 'H' : '.', nhh_avoid_ogm, nhh_avoid_bcast);
 }
 
 /**
@@ -196,7 +218,7 @@ static void batadv_v_neigh_print(struct batadv_priv *bat_priv,
 	int batman_count = 0;
 
 	seq_puts(seq,
-		 "  Neighbor        last-seen ( throughput) [        IF]\n");
+		 "  Neighbor        last-seen ( throughput) [        IF] NHH-flags\n");
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(hard_iface, &batadv_hardif_list, list) {
@@ -1049,6 +1071,7 @@ static struct batadv_algo_ops batadv_batman_v __read_mostly = {
 	},
 	.neigh = {
 		.hardif_init = batadv_v_hardif_neigh_init,
+		.hardif_no_broadcast = batadv_v_elp_no_broadcast,
 		.cmp = batadv_v_neigh_cmp,
 		.is_similar_or_better = batadv_v_neigh_is_sob,
 #ifdef CONFIG_BATMAN_ADV_DEBUGFS
@@ -1092,6 +1115,9 @@ void batadv_v_hardif_init(struct batadv_hard_iface *hard_iface)
 
 	bat_v->min_throughput = 0;
 	bat_v->max_throughput = U32_MAX;
+	bat_v->min_throughput_other = 0;
+	bat_v->max_throughput_other = U32_MAX;
+
 	memset(bat_v->neigh_hash, 0, sizeof(bat_v->neigh_hash));
 }
 
@@ -1106,9 +1132,15 @@ int batadv_v_mesh_init(struct batadv_priv *bat_priv)
 {
 	int ret = 0;
 
-	ret = batadv_v_ogm_init(bat_priv);
+	ret = batadv_v_elp_mesh_init(bat_priv);
 	if (ret < 0)
 		return ret;
+
+	ret = batadv_v_ogm_init(bat_priv);
+	if (ret < 0) {
+		batadv_v_elp_mesh_free(bat_priv);
+		return ret;
+	}
 
 	return 0;
 }

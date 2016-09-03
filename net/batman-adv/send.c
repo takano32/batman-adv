@@ -906,7 +906,6 @@ static void batadv_send_outstanding_bcast_packet(struct work_struct *work)
 	unsigned long send_time = jiffies + msecs_to_jiffies(5);
 	bool dropped = false;
 	u8 *neigh_addr;
-	u8 *orig_neigh;
 	int ret = 0;
 
 	delayed_work = to_delayed_work(work);
@@ -944,10 +943,8 @@ static void batadv_send_outstanding_bcast_packet(struct work_struct *work)
 							     neigh_addr);
 		}
 
-		orig_neigh = neigh_node ? neigh_node->orig : NULL;
-
 		ret = batadv_hardif_no_broadcast(hard_iface, bcast_packet->orig,
-						 orig_neigh);
+						 neigh_node, false);
 
 		if (ret) {
 			char *type;
@@ -961,6 +958,9 @@ static void batadv_send_outstanding_bcast_packet(struct work_struct *work)
 				break;
 			case BATADV_HARDIF_BCAST_DUPORIG:
 				type = "single neighbor is originator";
+				break;
+			case BATADV_HARDIF_BCAST_WORSENHH:
+				type = "worse neighborhood metric";
 				break;
 			default:
 				type = "unknown";

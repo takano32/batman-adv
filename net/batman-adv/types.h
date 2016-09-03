@@ -111,6 +111,8 @@ enum batadv_v_hard_iface_flags {
  * @flags: interface specific flags
  * @min_throughput: worst of all TX throughputs this neighbor has to others
  * @max_throughput: best of all TX throughputs this neighbor has to others
+ * @min_throughput_other: worst of all min_throughput's of other neighbors
+ * @max_throughput_other: best of all max_throughput's of other neighbors
  * @neigh_hash: a sha512 hash of all neighbors this neighbor sees
  *  (hash over the alphabetically ordered, concatenated, binary representation)
  */
@@ -123,6 +125,8 @@ struct batadv_hard_iface_bat_v {
 	u8 flags;
 	u32 min_throughput;
 	u32 max_throughput;
+	u32 min_throughput_other;
+	u32 max_throughput_other;
 	u8 neigh_hash[SHA512_DIGEST_SIZE];
 };
 
@@ -438,6 +442,10 @@ DECLARE_EWMA(throughput, 10, 8)
  * @throughput: ewma link throughput towards this neighbor
  * @elp_interval: time interval between two ELP transmissions
  * @elp_latest_seqno: latest and best known ELP sequence number
+ * @min_throughput: worst of all TX throughputs this neighbor has to others
+ * @max_throughput: best of all TX throughputs this neighbor has to others
+ * @neigh_hash: a sha512 hash of all neighbors this neighbor sees
+ *  (hash over the alphabetically ordered, concatenated, binary representation)
  * @last_unicast_tx: when the last unicast packet has been sent to this neighbor
  * @metric_work: work queue callback item for metric update
  */
@@ -445,6 +453,9 @@ struct batadv_hardif_neigh_node_bat_v {
 	struct ewma_throughput throughput;
 	u32 elp_interval;
 	u32 elp_latest_seqno;
+	u32 min_throughput;
+	u32 max_throughput;
+	u8 neigh_hash[SHA512_DIGEST_SIZE];
 	unsigned long last_unicast_tx;
 	struct work_struct metric_work;
 };
@@ -1496,6 +1507,8 @@ struct batadv_algo_iface_ops {
  * struct batadv_algo_neigh_ops - mesh algorithm callbacks (neighbour specific)
  * @hardif_init: called on creation of single hop entry
  *  (optional)
+ * @hardif_no_broadcast: algorithm specific check(s) regarding rebroadcasts
+ *  (optional)
  * @cmp: compare the metrics of two neighbors for their respective outgoing
  *  interfaces
  * @is_similar_or_better: check if neigh1 is equally similar or better than
@@ -1505,6 +1518,9 @@ struct batadv_algo_iface_ops {
  */
 struct batadv_algo_neigh_ops {
 	void (*hardif_init)(struct batadv_hardif_neigh_node *neigh);
+	bool (*hardif_no_broadcast)(struct batadv_hard_iface *if_outgoing,
+				    struct batadv_hardif_neigh_node *neigh,
+				    bool inverse_metric);
 	int (*cmp)(struct batadv_neigh_node *neigh1,
 		   struct batadv_hard_iface *if_outgoing1,
 		   struct batadv_neigh_node *neigh2,

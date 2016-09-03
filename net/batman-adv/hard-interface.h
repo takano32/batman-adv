@@ -45,12 +45,14 @@ enum batadv_hard_if_state {
  * @BATADV_HARDIF_BCAST_NORECIPIENT: Broadcast not needed, there is no recipient
  * @BATADV_HARDIF_BCAST_DUPFWD: There is just the neighbor we got it from
  * @BATADV_HARDIF_BCAST_DUPORIG: There is just the originator
+ * @BATADV_HARDIF_BCAST_WORSENHH: ELP detected a worse neighborhood metric
  */
 enum batadv_hard_if_bcast {
 	BATADV_HARDIF_BCAST_OK = 0,
 	BATADV_HARDIF_BCAST_NORECIPIENT,
 	BATADV_HARDIF_BCAST_DUPFWD,
 	BATADV_HARDIF_BCAST_DUPORIG,
+	BATADV_HARDIF_BCAST_WORSENHH,
 };
 
 /**
@@ -79,7 +81,9 @@ int batadv_hardif_min_mtu(struct net_device *soft_iface);
 void batadv_update_min_mtu(struct net_device *soft_iface);
 void batadv_hardif_release(struct kref *ref);
 int batadv_hardif_no_broadcast(struct batadv_hard_iface *if_outgoing,
-			       u8 *orig_addr, u8 *orig_neigh);
+			       u8 *orig_addr,
+			       struct batadv_hardif_neigh_node *hardif_neigh,
+			       bool inverse_metric);
 
 /**
  * batadv_hardif_put - decrement the hard interface refcounter and possibly
