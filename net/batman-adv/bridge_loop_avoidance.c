@@ -2449,3 +2449,48 @@ out:
 
 	return ret;
 }
+
+/**
+ * batadv_bla_is_my_claim - check if a client is claimed by this node
+ * @bat_priv: the bat priv with all the soft interface information
+ * @addr: mac address of the client to look for
+ * @vid: the VLAN ID
+ *
+ * Return: true if BLA is disabled or if addr is claimed by this node, false
+ * otherwise
+ */
+bool batadv_bla_is_my_claim(struct batadv_priv *bat_priv, u8 *addr,
+			    unsigned short vid)
+{
+	struct batadv_bla_claim search_claim;
+	struct batadv_hard_iface *primary_if;
+	struct batadv_bla_claim *claim;
+	bool ret = false;
+
+	if (!atomic_read(&bat_priv->bridge_loop_avoidance))
+		return true;
+
+	primary_if = batadv_primary_if_get_selected(bat_priv);
+	if (!primary_if)
+		goto out;
+
+	/* First look if the mac address is claimed */
+	ether_addr_copy(search_claim.addr, addr);
+	search_claim.vid = vid;
+
+	claim = batadv_claim_hash_find(bat_priv, &search_claim);
+	if (!claim)
+		goto out;
+
+	/* check if this node is the owner of the claim */
+	if (batadv_compare_eth(claim->backbone_gw->orig,
+				primary_if->net_dev->dev_addr))
+		ret = true;
+
+	batadv_claim_put(claim);
+out:
+	if (primary_if)
+		batadv_hardif_put(primary_if);
+
+	return ret;
+}
