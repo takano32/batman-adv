@@ -33,6 +33,7 @@
 #include <linux/rcupdate.h>
 #include <linux/seq_file.h>
 #include <linux/stddef.h>
+#include <linux/string.h>
 #include <linux/types.h>
 #include <linux/workqueue.h>
 #include <net/genetlink.h>
@@ -1081,11 +1082,17 @@ static struct batadv_algo_ops batadv_batman_v __read_mostly = {
  */
 void batadv_v_hardif_init(struct batadv_hard_iface *hard_iface)
 {
+	struct batadv_hard_iface_bat_v *bat_v = &hard_iface->bat_v;
+
 	/* enable link throughput auto-detection by setting the throughput
 	 * override to zero
 	 */
-	atomic_set(&hard_iface->bat_v.throughput_override, 0);
-	atomic_set(&hard_iface->bat_v.elp_interval, 500);
+	atomic_set(&bat_v->throughput_override, 0);
+	atomic_set(&bat_v->elp_interval, 500);
+
+	bat_v->min_throughput = 0;
+	bat_v->max_throughput = U32_MAX;
+	memset(bat_v->neigh_hash, 0, sizeof(bat_v->neigh_hash));
 }
 
 /**
@@ -1116,6 +1123,14 @@ void batadv_v_mesh_free(struct batadv_priv *bat_priv)
 }
 
 /**
+ * batadv_v_free - free the B.A.T.M.A.N. V global, mesh independent resources
+ */
+void batadv_v_free(void)
+{
+	batadv_v_elp_free();
+}
+
+/**
  * batadv_v_init - B.A.T.M.A.N. V initialization function
  *
  * Description: Takes care of initializing all the subcomponents.
@@ -1127,11 +1142,15 @@ int __init batadv_v_init(void)
 {
 	int ret;
 
+	ret = batadv_v_elp_init();
+	if (ret < 0)
+		return ret;
+
 	/* B.A.T.M.A.N. V echo location protocol packet  */
 	ret = batadv_recv_handler_register(BATADV_ELP,
 					   batadv_v_elp_packet_recv);
 	if (ret < 0)
-		return ret;
+		goto elp_free;
 
 	ret = batadv_recv_handler_register(BATADV_OGM2,
 					   batadv_v_ogm_packet_recv);
@@ -1143,6 +1162,9 @@ int __init batadv_v_init(void)
 		goto ogm_unregister;
 
 	return ret;
+
+elp_free:
+	batadv_v_elp_free();
 
 ogm_unregister:
 	batadv_recv_handler_unregister(BATADV_OGM2);

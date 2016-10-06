@@ -19,6 +19,7 @@
 #define _NET_BATMAN_ADV_PACKET_H_
 
 #include <asm/byteorder.h>
+#include <crypto/sha.h>
 #include <linux/types.h>
 
 #define batadv_tp_is_error(n) ((u8)(n) > 127 ? 1 : 0)
@@ -169,6 +170,14 @@ enum batadv_tvlv_type {
 	BATADV_TVLV_ANY		= 0xff,
 };
 
+/**
+ * enum batadv_tvlv_elp_type - tvlv type definitions for ELP messages
+ * @BATADV_TVLV_NHH: neighborhood hash
+ */
+enum batadv_tvlv_elp_type {
+	BATADV_TVLV_NHH		= 0x01,
+};
+
 #pragma pack(2)
 /* the destination hardware field in the ARP frame is used to
  * transport the claim type and the group id
@@ -246,6 +255,8 @@ struct batadv_ogm2_packet {
  * @orig: originator mac address
  * @seqno: sequence number
  * @elp_interval: currently used ELP sending interval in ms
+ * @reserved: reserved bytes for alignment
+ * @tvlv_len: length of tvlv data following the elp header
  */
 struct batadv_elp_packet {
 	u8     packet_type;
@@ -253,6 +264,8 @@ struct batadv_elp_packet {
 	u8     orig[ETH_ALEN];
 	__be32 seqno;
 	__be32 elp_interval;
+	__be16 reserved;
+	__be16 tvlv_len;
 };
 
 #define BATADV_ELP_HLEN sizeof(struct batadv_elp_packet)
@@ -634,6 +647,19 @@ struct batadv_tvlv_roam_adv {
 struct batadv_tvlv_mcast_data {
 	u8 flags;
 	u8 reserved[3];
+};
+
+/**
+ * struct batadv_tvlv_nhh_data - neighborhood hash data
+ * @min_throughput: worst of all TX throughputs this neighbor has to others
+ * @max_throughput: best of all TX throughputs this neighbor has to others
+ * @neigh_hash: a sha512 hash of all neighbors this neighbor sees
+ *  (hash over the alphabetically ordered, concatenated, binary representation)
+ */
+struct batadv_tvlv_nhh_data {
+	__be32 min_throughput;
+	__be32 max_throughput;
+	u8 neigh_hash[SHA512_DIGEST_SIZE];
 };
 
 #endif /* _NET_BATMAN_ADV_PACKET_H_ */

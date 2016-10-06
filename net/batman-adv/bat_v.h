@@ -23,6 +23,7 @@
 #ifdef CONFIG_BATMAN_ADV_BATMAN_V
 
 int batadv_v_init(void);
+void batadv_v_free(void);
 void batadv_v_hardif_init(struct batadv_hard_iface *hardif);
 int batadv_v_mesh_init(struct batadv_priv *bat_priv);
 void batadv_v_mesh_free(struct batadv_priv *bat_priv);
@@ -32,6 +33,10 @@ void batadv_v_mesh_free(struct batadv_priv *bat_priv);
 static inline int batadv_v_init(void)
 {
 	return 0;
+}
+
+static inline void batadv_v_free(void)
+{
 }
 
 static inline void batadv_v_hardif_init(struct batadv_hard_iface *hardif)

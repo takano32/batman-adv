@@ -22,6 +22,7 @@
 #error only "main.h" can be included directly
 #endif
 
+#include <crypto/sha.h>
 #include <linux/average.h>
 #include <linux/bitops.h>
 #include <linux/compiler.h>
@@ -108,6 +109,10 @@ enum batadv_v_hard_iface_flags {
  * @elp_wq: workqueue used to schedule ELP transmissions
  * @throughput_override: throughput override to disable link auto-detection
  * @flags: interface specific flags
+ * @min_throughput: worst of all TX throughputs this neighbor has to others
+ * @max_throughput: best of all TX throughputs this neighbor has to others
+ * @neigh_hash: a sha512 hash of all neighbors this neighbor sees
+ *  (hash over the alphabetically ordered, concatenated, binary representation)
  */
 struct batadv_hard_iface_bat_v {
 	atomic_t elp_interval;
@@ -116,6 +121,9 @@ struct batadv_hard_iface_bat_v {
 	struct delayed_work elp_wq;
 	atomic_t throughput_override;
 	u8 flags;
+	u32 min_throughput;
+	u32 max_throughput;
+	u8 neigh_hash[SHA512_DIGEST_SIZE];
 };
 
 /**

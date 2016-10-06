@@ -18,8 +18,10 @@
 #include "bat_v_elp.h"
 #include "main.h"
 
+#include <crypto/hash.h>
 #include <linux/atomic.h>
 #include <linux/byteorder/generic.h>
+#include <linux/err.h>
 #include <linux/errno.h>
 #include <linux/etherdevice.h>
 #include <linux/ethtool.h>
@@ -29,6 +31,7 @@
 #include <linux/kernel.h>
 #include <linux/kref.h>
 #include <linux/netdevice.h>
+#include <linux/printk.h>
 #include <linux/random.h>
 #include <linux/rculist.h>
 #include <linux/rcupdate.h>
@@ -49,6 +52,8 @@
 #include "routing.h"
 #include "send.h"
 
+static struct crypto_shash *tfm;
+
 /**
  * batadv_v_elp_start_timer - restart timer for ELP periodic work
  * @hard_iface: the interface for which the timer has to be reset
@@ -62,6 +67,136 @@ static void batadv_v_elp_start_timer(struct batadv_hard_iface *hard_iface)
 
 	queue_delayed_work(batadv_event_workqueue, &hard_iface->bat_v.elp_wq,
 			   msecs_to_jiffies(msecs));
+}
+
+/**
+ * batadv_v_elp_update_neigh_hash - updates neighborhood hash related data
+ * @hard_iface: interface which the data has to be prepared for
+ *
+ * Firstly, this function updates the neighborhood hash of a hard interface.
+ * That is it resummarizes the present neighborhood into one compact hash
+ * representation.
+ *
+ * Secondly, minimum and maximum throughput values within this neighorhood are
+ * updated.
+ */
+static void batadv_v_elp_update_neigh_hash(struct batadv_hard_iface *hard_iface)
+{
+	struct batadv_priv *bat_priv = netdev_priv(hard_iface->soft_iface);
+	struct batadv_hardif_neigh_node *hardif_neigh = NULL;
+	struct ewma_throughput *ewma_throughput;
+	u8 *own_addr = hard_iface->net_dev->dev_addr;
+	u32 min_throughput = U32_MAX;
+	u32 max_throughput = 0;
+	u32 throughput;
+	int ret;
+
+	SHASH_DESC_ON_STACK(shash, tfm);
+
+	shash->flags = 0;
+	shash->tfm = tfm;
+
+	ret = crypto_shash_init(shash);
+	if (ret)
+		goto err;
+
+	rcu_read_lock();
+	hlist_for_each_entry_rcu(hardif_neigh,
+				 &hard_iface->neigh_list, list) {
+		/* insert own address at the right spot */
+		if (own_addr && (memcmp(own_addr, hardif_neigh->addr,
+					ETH_ALEN) < 0)) {
+			ret = crypto_shash_update(shash, own_addr, ETH_ALEN);
+			if (ret) {
+				rcu_read_unlock();
+				goto err;
+			}
+
+			own_addr = NULL;
+		}
+
+		ret = crypto_shash_update(shash, hardif_neigh->addr, ETH_ALEN);
+		if (ret) {
+			rcu_read_unlock();
+			goto err;
+		}
+
+		ewma_throughput = &hardif_neigh->bat_v.throughput;
+		throughput = ewma_throughput_read(ewma_throughput);
+
+		if (throughput < min_throughput)
+			min_throughput = throughput;
+
+		if (throughput > max_throughput)
+			max_throughput = throughput;
+	}
+	rcu_read_unlock();
+
+	if (own_addr) {
+		ret = crypto_shash_update(shash, own_addr, ETH_ALEN);
+		if (ret)
+			goto err;
+	}
+
+	ret = crypto_shash_final(shash, hard_iface->bat_v.neigh_hash);
+	if (ret)
+		goto err;
+
+	hard_iface->bat_v.min_throughput = min_throughput;
+	hard_iface->bat_v.max_throughput = max_throughput;
+
+	batadv_dbg(BATADV_DBG_BATMAN, bat_priv,
+		   "Updated neighbor hash on interface %s: %*phN, min_through: %u kbit/s, max_through: %u kbit/s\n",
+		   hard_iface->net_dev->name,
+		   (int)sizeof(hard_iface->bat_v.neigh_hash),
+		   hard_iface->bat_v.neigh_hash,
+		   hard_iface->bat_v.min_throughput * 100,
+		   hard_iface->bat_v.max_throughput * 100);
+
+	return;
+
+err:
+	memset(hard_iface->bat_v.neigh_hash, 0,
+	       sizeof(hard_iface->bat_v.neigh_hash));
+	hard_iface->bat_v.min_throughput = 0;
+	hard_iface->bat_v.max_throughput = U32_MAX;
+
+	pr_warn_once("An error occurred while calculating neighbor hash for %s\n",
+		     hard_iface->net_dev->name);
+}
+
+/**
+ * batadv_v_elp_update_neigh_hash_tvlv - updates a neighborhood hash tvlv
+ * @hard_iface: interface which the tvlv is updated for
+ * @skb: the to be transmitted ELP packet containing the neighborhood tvlv
+ *
+ * Prepares the neighborhood hash tvlv of an ELP packet by updating its
+ * hash as well as minimum and maximum throughput values.
+ */
+static void
+batadv_v_elp_update_neigh_hash_tvlv(struct batadv_hard_iface *hard_iface,
+				    struct sk_buff *skb)
+{
+	struct batadv_hard_iface_bat_v *hard_iface_v = &hard_iface->bat_v;
+	struct batadv_elp_packet *elp_packet;
+	struct batadv_tvlv_hdr *tvlv_hdr;
+	struct batadv_tvlv_nhh_data *nhh_data;
+
+	elp_packet = (struct batadv_elp_packet *)skb_network_header(skb);
+	tvlv_hdr = (struct batadv_tvlv_hdr *)(elp_packet + 1);
+	nhh_data = (struct batadv_tvlv_nhh_data *)(tvlv_hdr + 1);
+
+	/* no rumours: do not announce uncertain/initialization values */
+	if (hard_iface_v->min_throughput == 0 ||
+	    hard_iface_v->max_throughput == U32_MAX) {
+		elp_packet->tvlv_len = 0;
+		skb_trim(skb, skb->len - sizeof(*tvlv_hdr) - sizeof(*nhh_data));
+	} else {
+		nhh_data->min_throughput = htonl(hard_iface_v->min_throughput);
+		nhh_data->max_throughput = htonl(hard_iface_v->max_throughput);
+		memcpy(nhh_data->neigh_hash, hard_iface_v->neigh_hash,
+		       sizeof(hard_iface_v->neigh_hash));
+	}
 }
 
 /**
@@ -274,6 +409,9 @@ static void batadv_v_elp_periodic_work(struct work_struct *work)
 	elp_interval = atomic_read(&hard_iface->bat_v.elp_interval);
 	elp_packet->elp_interval = htonl(elp_interval);
 
+	batadv_v_elp_update_neigh_hash(hard_iface);
+	batadv_v_elp_update_neigh_hash_tvlv(hard_iface, skb);
+
 	batadv_dbg(BATADV_DBG_BATMAN, bat_priv,
 		   "Sending broadcast ELP packet on interface %s, seqno %u\n",
 		   hard_iface->net_dev->name,
@@ -329,23 +467,43 @@ out:
 int batadv_v_elp_iface_enable(struct batadv_hard_iface *hard_iface)
 {
 	struct batadv_elp_packet *elp_packet;
+	struct batadv_tvlv_hdr *tvlv_hdr;
+	struct batadv_tvlv_nhh_data *nhh_data;
 	unsigned char *elp_buff;
 	u32 random_seqno;
 	size_t size;
 	int res = -ENOMEM;
 
 	size = ETH_HLEN + NET_IP_ALIGN + BATADV_ELP_HLEN;
+	size +=	sizeof(*nhh_data) + sizeof(*tvlv_hdr);
+
 	hard_iface->bat_v.elp_skb = dev_alloc_skb(size);
 	if (!hard_iface->bat_v.elp_skb)
 		goto out;
 
 	skb_reserve(hard_iface->bat_v.elp_skb, ETH_HLEN + NET_IP_ALIGN);
+	skb_reset_network_header(hard_iface->bat_v.elp_skb);
+
 	elp_buff = skb_put(hard_iface->bat_v.elp_skb, BATADV_ELP_HLEN);
 	elp_packet = (struct batadv_elp_packet *)elp_buff;
 	memset(elp_packet, 0, BATADV_ELP_HLEN);
 
 	elp_packet->packet_type = BATADV_ELP;
 	elp_packet->version = BATADV_COMPAT_VERSION;
+	elp_packet->tvlv_len = htons(sizeof(*nhh_data) + sizeof(*tvlv_hdr));
+
+	elp_buff = skb_put(hard_iface->bat_v.elp_skb, sizeof(*tvlv_hdr));
+	tvlv_hdr = (struct batadv_tvlv_hdr *)elp_buff;
+	tvlv_hdr->type = BATADV_TVLV_NHH;
+	tvlv_hdr->version = 1;
+	tvlv_hdr->len = htons(sizeof(*nhh_data));
+
+	size = sizeof(*nhh_data);
+	elp_buff = skb_put(hard_iface->bat_v.elp_skb, size);
+	nhh_data = (struct batadv_tvlv_nhh_data *)elp_buff;
+	nhh_data->min_throughput = htonl(0);
+	nhh_data->max_throughput = htonl(U32_MAX);
+	memset(nhh_data->neigh_hash, 0, size);
 
 	/* randomize initial seqno to avoid collision */
 	get_random_bytes(&random_seqno, sizeof(random_seqno));
@@ -497,10 +655,14 @@ int batadv_v_elp_packet_recv(struct sk_buff *skb,
 	struct batadv_elp_packet *elp_packet;
 	struct batadv_hard_iface *primary_if;
 	struct ethhdr *ethhdr = (struct ethhdr *)skb_mac_header(skb);
+	unsigned int min_elp_len = BATADV_ELP_HLEN;
 	bool res;
 	int ret = NET_RX_DROP;
 
-	res = batadv_check_management_packet(skb, if_incoming, BATADV_ELP_HLEN);
+	min_elp_len -= sizeof(elp_packet->tvlv_len);
+	min_elp_len -= sizeof(elp_packet->reserved);
+
+	res = batadv_check_management_packet(skb, if_incoming, min_elp_len);
 	if (!res)
 		goto free_skb;
 
@@ -537,4 +699,26 @@ free_skb:
 		kfree_skb(skb);
 
 	return ret;
+}
+
+/**
+ * batadv_v_elp_init - initialize global ELP structures
+ *
+ * Return: A negative value on error, zero on success.
+ */
+int batadv_v_elp_init(void)
+{
+	tfm = crypto_alloc_shash("sha512", 0, 0);
+	if (IS_ERR(tfm))
+		return PTR_ERR(tfm);
+
+	return 0;
+}
+
+/**
+ * batadv_v_elp_free - free global ELP structures
+ */
+void batadv_v_elp_free(void)
+{
+	crypto_free_shash(tfm);
 }

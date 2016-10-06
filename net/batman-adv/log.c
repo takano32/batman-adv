@@ -65,7 +65,7 @@ static int batadv_fdebug_log(struct batadv_priv_debug_log *debug_log,
 			     const char *fmt, ...)
 {
 	va_list args;
-	static char debug_log_buf[256];
+	static char debug_log_buf[512];
 	char *p;
 
 	if (!debug_log)
@@ -89,7 +89,7 @@ static int batadv_fdebug_log(struct batadv_priv_debug_log *debug_log,
 int batadv_debug_log(struct batadv_priv *bat_priv, const char *fmt, ...)
 {
 	va_list args;
-	char tmp_log_buf[256];
+	char tmp_log_buf[512];
 
 	va_start(args, fmt);
 	vscnprintf(tmp_log_buf, sizeof(tmp_log_buf), fmt, args);

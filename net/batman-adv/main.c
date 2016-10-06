@@ -138,6 +138,7 @@ static void __exit batadv_exit(void)
 	rcu_barrier();
 
 	batadv_tt_cache_destroy();
+	batadv_v_free();
 }
 
 int batadv_mesh_init(struct net_device *soft_iface)
