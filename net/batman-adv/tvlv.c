@@ -87,10 +87,12 @@ batadv_tvlv_handler_get(struct batadv_priv *bat_priv, int packet_type,
 		if (tvlv_handler_tmp->packet_type != packet_type)
 			continue;
 
-		if (tvlv_handler_tmp->tvlv_type != tvlv_type)
+		if (tvlv_handler_tmp->tvlv_type != BATADV_TVLV_ANY &&
+		    tvlv_handler_tmp->tvlv_type != tvlv_type)
 			continue;
 
-		if (tvlv_handler_tmp->tvlv_version != tvlv_version)
+		if (tvlv_handler_tmp->tvlv_type != BATADV_TVLV_ANY &&
+		    tvlv_handler_tmp->tvlv_version != tvlv_version)
 			continue;
 
 		if (!kref_get_unless_zero(&tvlv_handler_tmp->refcount))
@@ -430,6 +432,7 @@ static int batadv_tvlv_call_handler2(struct batadv_priv *bat_priv,
 				     u8 tvlv_version, void *tvlv_value,
 				     u16 tvlv_value_len, void *ctx)
 {
+	struct batadv_tvlv_handler_ctx *handler_ctx;
 	struct batadv_tvlv_handler *tvlv_handler;
 	int ret;
 
@@ -437,6 +440,12 @@ static int batadv_tvlv_call_handler2(struct batadv_priv *bat_priv,
 					       tvlv_version);
 	if (!tvlv_handler)
 		return NET_RX_DROP;
+
+	if (tvlv_handler->flags & BATADV_TVLV_HANDLER_MORECTX) {
+		handler_ctx = (struct batadv_tvlv_handler_ctx *)ctx;
+		handler_ctx->tvlv_type = tvlv_type;
+		handler_ctx->tvlv_version = tvlv_version;
+	}
 
 	ret = tvlv_handler->handler(bat_priv, tvlv_value, tvlv_value_len, ctx);
 	tvlv_handler->flags |= BATADV_TVLV_HANDLER_CALLED;

@@ -47,6 +47,7 @@
 #include <net/rtnetlink.h>
 #include <uapi/linux/batman_adv.h>
 
+#include "aggregation.h"
 #include "bat_algo.h"
 #include "bat_iv_ogm.h"
 #include "bat_v.h"
@@ -179,6 +180,10 @@ int batadv_mesh_init(struct net_device *soft_iface)
 	INIT_HLIST_HEAD(&bat_priv->softif_vlan_list);
 	INIT_HLIST_HEAD(&bat_priv->tp_list);
 
+	ret = batadv_aggr_mesh_init(bat_priv);
+	if (ret < 0)
+		goto err;
+
 	ret = batadv_v_mesh_init(bat_priv);
 	if (ret < 0)
 		goto err;
@@ -226,6 +231,7 @@ void batadv_mesh_free(struct net_device *soft_iface)
 
 	batadv_gw_node_free(bat_priv);
 
+	batadv_aggr_mesh_free(bat_priv);
 	batadv_v_mesh_free(bat_priv);
 	batadv_nc_mesh_free(bat_priv);
 	batadv_dat_free(bat_priv);
@@ -507,6 +513,7 @@ static void batadv_recv_handler_init(void)
 	BUILD_BUG_ON(sizeof(struct batadv_unicast_packet) != 10);
 	BUILD_BUG_ON(sizeof(struct batadv_unicast_4addr_packet) != 18);
 	BUILD_BUG_ON(sizeof(struct batadv_frag_packet) != 20);
+	BUILD_BUG_ON(sizeof(struct batadv_aggr_packet) != 4);
 	BUILD_BUG_ON(sizeof(struct batadv_bcast_packet) != 14);
 	BUILD_BUG_ON(sizeof(struct batadv_coded_packet) != 46);
 	BUILD_BUG_ON(sizeof(struct batadv_unicast_tvlv_packet) != 20);
@@ -533,6 +540,8 @@ static void batadv_recv_handler_init(void)
 	batadv_rx_handler[BATADV_ICMP] = batadv_recv_icmp_packet;
 	/* Fragmented packets */
 	batadv_rx_handler[BATADV_UNICAST_FRAG] = batadv_recv_frag_packet;
+	/* Aggregation packets */
+	batadv_rx_handler[BATADV_BCAST_AGGR] = batadv_recv_aggr_packet;
 }
 
 int

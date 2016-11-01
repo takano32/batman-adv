@@ -961,6 +961,12 @@ static const struct {
 	{ "frag_rx_bytes" },
 	{ "frag_fwd" },
 	{ "frag_fwd_bytes" },
+#ifdef CONFIG_BATMAN_ADV_AGGR
+	{ "aggr_rx" },
+	{ "aggr_rx_bytes" },
+	{ "aggr_parts_rx" },
+	{ "aggr_parts_rx_bytes" },
+#endif
 	{ "tt_request_tx" },
 	{ "tt_request_rx" },
 	{ "tt_response_tx" },

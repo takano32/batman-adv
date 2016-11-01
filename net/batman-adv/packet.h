@@ -30,6 +30,7 @@
  * @BATADV_CODED: network coded packets
  * @BATADV_ELP: echo location packets for B.A.T.M.A.N. V
  * @BATADV_OGM2: originator messages for B.A.T.M.A.N. V
+ * @BATADV_AGGR: broadcast aggregation packets
  *
  * @BATADV_UNICAST: unicast packets carrying unicast payload traffic
  * @BATADV_UNICAST_FRAG: unicast packets carrying a fragment of the original
@@ -46,6 +47,7 @@ enum batadv_packettype {
 	BATADV_CODED            = 0x02,
 	BATADV_ELP		= 0x03,
 	BATADV_OGM2		= 0x04,
+	BATADV_BCAST_AGGR	= 0x05,
 	/* 0x40 - 0x7f: unicast */
 #define BATADV_UNICAST_MIN     0x40
 	BATADV_UNICAST          = 0x40,
@@ -153,6 +155,8 @@ enum batadv_bla_claimframe {
  * @BATADV_TVLV_TT: translation table tvlv
  * @BATADV_TVLV_ROAM: roaming advertisement tvlv
  * @BATADV_TVLV_MCAST: multicast capability tvlv
+ * @BATADV_TVLV_AGGR: generic broadcast aggregation capability tvlv
+ * @BATADV_ANYTYPE: internal place holder for TVLV handlers, not for the "wire"
  */
 enum batadv_tvlv_type {
 	BATADV_TVLV_GW		= 0x01,
@@ -161,6 +165,8 @@ enum batadv_tvlv_type {
 	BATADV_TVLV_TT		= 0x04,
 	BATADV_TVLV_ROAM	= 0x05,
 	BATADV_TVLV_MCAST	= 0x06,
+	BATADV_TVLV_AGGR	= 0x07,
+	BATADV_TVLV_ANY		= 0xff,
 };
 
 #pragma pack(2)
@@ -452,6 +458,18 @@ struct batadv_frag_packet {
 	u8     orig[ETH_ALEN];
 	__be16 seqno;
 	__be16 total_size;
+};
+
+/**
+ * struct batadv_aggr_packet - aggregation packet for broadcast packets
+ * @packet_type: batman-adv packet type, part of the general header
+ * @version: batman-adv protocol version, part of the genereal header
+ * @tvlv_len: length of tvlv data following the aggregation header
+ */
+struct batadv_aggr_packet {
+	u8     packet_type;
+	u8     version;  /* batman version field */
+	__be16 tvlv_len;
 };
 
 /**
