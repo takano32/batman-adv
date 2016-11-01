@@ -34,6 +34,7 @@
 #include <linux/spinlock.h>
 #include <linux/stddef.h>
 
+#include "aggregation.h"
 #include "bitarray.h"
 #include "bridge_loop_avoidance.h"
 #include "distributed-arp-table.h"
@@ -1152,6 +1153,66 @@ put_orig_node:
 free_skb:
 	kfree_skb(skb);
 
+	return ret;
+}
+
+/**
+ * batadv_recv_aggr_get_tvlv_len - get tvlv_len of an aggregation packet
+ * @skb: the aggregation packet to parse
+ *
+ * Return: Length of the tvlv data of the given skb on success,
+ * -EINVAL otherwise (i.e. packet is too short).
+ */
+static int batadv_recv_aggr_get_tvlv_len(struct sk_buff *skb)
+{
+	unsigned int tvlv_len_offset;
+	__be16 *tvlv_len, tvlv_len_buff;
+
+	tvlv_len_offset = offsetof(struct batadv_aggr_packet, tvlv_len);
+	tvlv_len = skb_header_pointer(skb, tvlv_len_offset,
+				      sizeof(tvlv_len_buff), &tvlv_len_buff);
+
+	if (!tvlv_len)
+		return -EINVAL;
+
+	return ntohs(*tvlv_len);
+}
+
+/**
+ * batadv_recv_aggr_packet - process received aggregation packet
+ * @skb: the aggregation packet to process
+ * @recv_if: interface that the skb is received on
+ *
+ * This function de-aggregates broadcast packets from the given
+ * aggregation packet.
+ *
+ * Frees/consumes the provided skb.
+ *
+ * Return: NET_RX_SUCCESS on success, NET_RX_DROP otherwise.
+ */
+int batadv_recv_aggr_packet(struct sk_buff *skb,
+			    struct batadv_hard_iface *recv_if)
+{
+	struct batadv_priv *bat_priv = netdev_priv(recv_if->soft_iface);
+	struct batadv_aggr_ctx aggr_ctx;
+	unsigned int tvlv_offset = sizeof(struct batadv_aggr_packet);
+	int tvlv_len, ret;
+
+	aggr_ctx.recv_if = recv_if;
+	aggr_ctx.h_source = eth_hdr(skb)->h_source;
+	tvlv_len = batadv_recv_aggr_get_tvlv_len(skb);
+
+	if (tvlv_len < 0) {
+		kfree_skb(skb);
+		return NET_RX_DROP;
+	}
+
+	batadv_aggr_add_counter_rx(bat_priv, skb);
+
+	ret = batadv_tvlv_containers_process2(bat_priv, skb, BATADV_BCAST_AGGR,
+					      tvlv_offset, tvlv_len, &aggr_ctx);
+
+	consume_skb(skb);
 	return ret;
 }
 

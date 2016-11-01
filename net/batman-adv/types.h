@@ -556,6 +556,10 @@ struct batadv_bcast_duplist_entry {
  * @BATADV_CNT_FRAG_RX_BYTES: received fragment traffic bytes counter
  * @BATADV_CNT_FRAG_FWD: forwarded fragment traffic packet counter
  * @BATADV_CNT_FRAG_FWD_BYTES: forwarded fragment traffic bytes counter
+ * @BATADV_CNT_AGGR_RX: received aggregation traffic packet count
+ * @BATADV_CNT_AGGR_RX_BYTES: received aggregation traffic bytes counter
+ * @BATADV_CNT_AGGR_PARTS_RX: received aggregated traffic packet counter
+ * @BATADV_CNT_AGGR_PARTS_RX_BYTES: received aggregated bytes counter
  * @BATADV_CNT_TT_REQUEST_TX: transmitted tt req traffic packet counter
  * @BATADV_CNT_TT_REQUEST_RX: received tt req traffic packet counter
  * @BATADV_CNT_TT_RESPONSE_TX: transmitted tt resp traffic packet counter
@@ -599,6 +603,12 @@ enum batadv_counters {
 	BATADV_CNT_FRAG_RX_BYTES,
 	BATADV_CNT_FRAG_FWD,
 	BATADV_CNT_FRAG_FWD_BYTES,
+#ifdef CONFIG_BATMAN_ADV_AGGR
+	BATADV_CNT_AGGR_RX,
+	BATADV_CNT_AGGR_RX_BYTES,
+	BATADV_CNT_AGGR_PARTS_RX,
+	BATADV_CNT_AGGR_PARTS_RX_BYTES,
+#endif
 	BATADV_CNT_TT_REQUEST_TX,
 	BATADV_CNT_TT_REQUEST_RX,
 	BATADV_CNT_TT_RESPONSE_TX,
@@ -1625,16 +1635,44 @@ struct batadv_tvlv_handler {
 };
 
 /**
+ * struct batadv_tvlv_handler_ctx - handler meta information
+ * @tvlv_type: type of the processed tvlv
+ * @tvlv_version: version of the processed tvlv
+ *
+ * This structure is provided to a tvlv handler if the
+ * BATADV_TVLV_HANDLER_MORECTX flag was set during registration.
+ */
+struct batadv_tvlv_handler_ctx {
+	u8 tvlv_type;
+	u8 tvlv_version;
+};
+
+/**
+ * struct batadv_aggr_ctx - aggregation tvlv context
+ * @handler: information regarding the tvlv handler itself
+ * @recv_if: interface the packet was received from
+ * @h_source: ethernet address of the neighbor the packet was received from
+ */
+struct batadv_aggr_ctx {
+	struct batadv_tvlv_handler_ctx handler;
+	struct batadv_hard_iface *recv_if;
+	unsigned char *h_source;
+};
+
+/**
  * enum batadv_tvlv_handler_flags - tvlv handler flags definitions
  * @BATADV_TVLV_HANDLER_CIFNOTFND: tvlv processing function will call
  *  this handler even if its type was not found (with no data)
  * @BATADV_TVLV_HANDLER_CALLED: internal tvlv handling flag - the API marks
  *  a handler as being called, so it won't be called if the
  *  BATADV_TVLV_HANDLER_CIFNOTFND flag was set
+ * @BATADV_TVLV_HANDLER_MORECTX: tvlv processing function will be provided with
+ *  handler specific context (e.g. tvlv type and version)
  */
 enum batadv_tvlv_handler_flags {
 	BATADV_TVLV_HANDLER_CIFNOTFND = BIT(1),
 	BATADV_TVLV_HANDLER_CALLED = BIT(2),
+	BATADV_TVLV_HANDLER_MORECTX = BIT(3),
 };
 
 /**
