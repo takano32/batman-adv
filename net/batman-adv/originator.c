@@ -38,6 +38,7 @@
 #include <net/sock.h>
 #include <uapi/linux/batman_adv.h>
 
+#include "aggregation.h"
 #include "bat_algo.h"
 #include "distributed-arp-table.h"
 #include "fragmentation.h"
@@ -857,6 +858,7 @@ static void batadv_orig_node_free_rcu(struct rcu_head *rcu)
 	batadv_mcast_purge_orig(orig_node);
 
 	batadv_frag_purge_orig(orig_node, NULL);
+	batadv_aggr_purge_orig(orig_node);
 
 	if (orig_node->bat_priv->algo_ops->orig.free)
 		orig_node->bat_priv->algo_ops->orig.free(orig_node);

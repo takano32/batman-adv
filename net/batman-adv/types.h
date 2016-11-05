@@ -133,6 +133,20 @@ enum batadv_hard_iface_wifi_flags {
 	BATADV_HARDIF_WIFI_CFG80211_INDIRECT = BIT(3),
 };
 
+#ifdef CONFIG_BATMAN_ADV_AGGR
+/**
+ * struct batadv_hard_iface_aggr - per hard-interface aggregation data
+ * @aggr_list: list for to be aggregated broadcast packets
+ * @aggr_list_lock: lock protecting aggr_list
+ * @work: work item for periodic aggregation packet transmissions
+ */
+struct batadv_hard_iface_aggr {
+	struct sk_buff_head aggr_list;
+	spinlock_t aggr_list_lock; /* protects aggr_list */
+	struct delayed_work work;
+};
+#endif
+
 /**
  * struct batadv_hard_iface - network device known to batman-adv
  * @list: list node for batadv_hardif_list
@@ -149,6 +163,7 @@ enum batadv_hard_iface_wifi_flags {
  * @rcu: struct used for freeing in an RCU-safe manner
  * @bat_iv: per hard-interface B.A.T.M.A.N. IV data
  * @bat_v: per hard-interface B.A.T.M.A.N. V data
+ * @aggr: per hard-interface aggregation data
  * @debug_dir: dentry for nc subdir in batman-adv directory in debugfs
  * @neigh_list: list of unique single hop neighbors via this interface
  * @neigh_list_lock: lock protecting neigh_list
@@ -168,6 +183,9 @@ struct batadv_hard_iface {
 	struct batadv_hard_iface_bat_iv bat_iv;
 #ifdef CONFIG_BATMAN_ADV_BATMAN_V
 	struct batadv_hard_iface_bat_v bat_v;
+#endif
+#ifdef CONFIG_BATMAN_ADV_AGGR
+	struct batadv_hard_iface_aggr aggr;
 #endif
 	struct dentry *debug_dir;
 	struct hlist_head neigh_list;
@@ -376,12 +394,14 @@ struct batadv_orig_node {
  * @BATADV_ORIG_CAPA_HAS_TT: orig node has tt capability
  * @BATADV_ORIG_CAPA_HAS_MCAST: orig node has some multicast capability
  *  (= orig node announces a tvlv of type BATADV_TVLV_MCAST)
+ * @BATADV_ORIG_CAPA_HAS_AGGR: orig node has broadcast aggregation capability
  */
 enum batadv_orig_capabilities {
 	BATADV_ORIG_CAPA_HAS_DAT,
 	BATADV_ORIG_CAPA_HAS_NC,
 	BATADV_ORIG_CAPA_HAS_TT,
 	BATADV_ORIG_CAPA_HAS_MCAST,
+	BATADV_ORIG_CAPA_HAS_AGGR,
 };
 
 /**
@@ -556,10 +576,17 @@ struct batadv_bcast_duplist_entry {
  * @BATADV_CNT_FRAG_RX_BYTES: received fragment traffic bytes counter
  * @BATADV_CNT_FRAG_FWD: forwarded fragment traffic packet counter
  * @BATADV_CNT_FRAG_FWD_BYTES: forwarded fragment traffic bytes counter
+ * @BATADV_CNT_AGGR_TX: transmitted aggregation traffic packet count
+ * @BATADV_CNT_AGGR_TX_BYTES: transmitted aggregation traffic bytes counter
  * @BATADV_CNT_AGGR_RX: received aggregation traffic packet count
  * @BATADV_CNT_AGGR_RX_BYTES: received aggregation traffic bytes counter
+ * @BATADV_CNT_AGGR_PARTS_TX: transmitted aggregated traffic packet counter
+ * @BATADV_CNT_AGGR_PARTS_TX_BYTES: transmitted aggregated bytes counter
  * @BATADV_CNT_AGGR_PARTS_RX: received aggregated traffic packet counter
  * @BATADV_CNT_AGGR_PARTS_RX_BYTES: received aggregated bytes counter
+ * @BATADV_CNT_AGGR_QUEUE_FULL: counter for packets dismissed for aggregation
+ *  due to a full aggregation queue
+ * @BATADV_CNT_AGGR_URGENT: counter for early aggregation packet transmissions
  * @BATADV_CNT_TT_REQUEST_TX: transmitted tt req traffic packet counter
  * @BATADV_CNT_TT_REQUEST_RX: received tt req traffic packet counter
  * @BATADV_CNT_TT_RESPONSE_TX: transmitted tt resp traffic packet counter
@@ -604,10 +631,16 @@ enum batadv_counters {
 	BATADV_CNT_FRAG_FWD,
 	BATADV_CNT_FRAG_FWD_BYTES,
 #ifdef CONFIG_BATMAN_ADV_AGGR
+	BATADV_CNT_AGGR_TX,
+	BATADV_CNT_AGGR_TX_BYTES,
 	BATADV_CNT_AGGR_RX,
 	BATADV_CNT_AGGR_RX_BYTES,
+	BATADV_CNT_AGGR_PARTS_TX,
+	BATADV_CNT_AGGR_PARTS_TX_BYTES,
 	BATADV_CNT_AGGR_PARTS_RX,
 	BATADV_CNT_AGGR_PARTS_RX_BYTES,
+	BATADV_CNT_AGGR_QUEUE_FULL,
+	BATADV_CNT_AGGR_URGENT,
 #endif
 	BATADV_CNT_TT_REQUEST_TX,
 	BATADV_CNT_TT_REQUEST_RX,
@@ -1011,7 +1044,9 @@ struct batadv_priv_bat_v {
  * @mesh_state: current status of the mesh (inactive/active/deactivating)
  * @soft_iface: net device which holds this struct as private data
  * @bat_counters: mesh internal traffic statistic counters (see batadv_counters)
- * @aggregated_ogms: bool indicating whether OGM aggregation is enabled
+ * @aggregation: bool indicating whether aggregation is enabled
+ * @aggr_num_disabled: number of nodes that have no broadcast aggregation
+ *  capability
  * @bonding: bool indicating whether traffic bonding is enabled
  * @fragmentation: bool indicating whether traffic fragmentation is enabled
  * @packet_size_max: max packet size that can be transmitted via
@@ -1065,7 +1100,10 @@ struct batadv_priv {
 	atomic_t mesh_state;
 	struct net_device *soft_iface;
 	u64 __percpu *bat_counters; /* Per cpu counters */
-	atomic_t aggregated_ogms;
+	atomic_t aggregation;
+#ifdef CONFIG_BATMAN_ADV_AGGR
+	atomic_t aggr_num_disabled;
+#endif
 	atomic_t bonding;
 	atomic_t fragmentation;
 	atomic_t packet_size_max;

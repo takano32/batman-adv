@@ -27,6 +27,14 @@ struct sk_buff;
 void batadv_aggr_add_counter_rx(struct batadv_priv *bat_priv,
 				struct sk_buff *skb);
 
+void batadv_aggr_hardif_start(struct batadv_hard_iface *hard_iface);
+void batadv_aggr_hardif_stop(struct batadv_hard_iface *hard_iface);
+
+int batadv_aggr_queue(struct sk_buff *skb,
+		      struct batadv_hard_iface *hard_iface);
+
+void batadv_aggr_purge_orig(struct batadv_orig_node *orig);
+void batadv_aggr_hardif_init(struct batadv_hard_iface *hard_iface);
 int batadv_aggr_mesh_init(struct batadv_priv *bat_priv);
 void batadv_aggr_mesh_free(struct batadv_priv *bat_priv);
 
@@ -34,6 +42,29 @@ void batadv_aggr_mesh_free(struct batadv_priv *bat_priv);
 
 static inline void batadv_aggr_add_counter_rx(struct batadv_priv *bat_priv,
 					      struct sk_buff *skb)
+{
+}
+
+static inline void
+batadv_aggr_hardif_start(struct batadv_hard_iface *hard_iface)
+{
+}
+
+static inline void batadv_aggr_hardif_stop(struct batadv_hard_iface *hard_iface)
+{
+}
+
+static inline int batadv_aggr_queue(struct sk_buff *skb,
+				    struct batadv_hard_iface *hard_iface)
+{
+	return NET_XMIT_DROP;
+}
+
+static inline void batadv_aggr_purge_orig(struct batadv_orig_node *orig)
+{
+}
+
+static inline void batadv_aggr_hardif_init(struct batadv_hard_iface *hard_iface)
 {
 }
 
