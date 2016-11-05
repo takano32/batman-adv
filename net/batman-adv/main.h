@@ -148,6 +148,7 @@ enum batadv_mesh_state {
 
 #define BATADV_BCAST_QUEUE_LEN		256
 #define BATADV_BATMAN_QUEUE_LEN	256
+#define BATADV_AGGR_QUEUE_LEN	512
 
 enum batadv_uev_action {
 	BATADV_UEV_ADD = 0,

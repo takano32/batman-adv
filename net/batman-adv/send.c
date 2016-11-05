@@ -40,6 +40,7 @@
 #include <linux/stddef.h>
 #include <linux/workqueue.h>
 
+#include "aggregation.h"
 #include "distributed-arp-table.h"
 #include "fragmentation.h"
 #include "gateway_client.h"
@@ -126,6 +127,14 @@ send_skb_err:
 int batadv_send_broadcast_skb(struct sk_buff *skb,
 			      struct batadv_hard_iface *hard_iface)
 {
+	int ret;
+
+	skb_reset_network_header(skb);
+
+	ret = batadv_aggr_queue(skb, hard_iface);
+	if (ret == NET_XMIT_SUCCESS)
+		return ret;
+
 	return batadv_send_skb_packet(skb, hard_iface, batadv_broadcast_addr);
 }
 

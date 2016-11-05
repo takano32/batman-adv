@@ -665,7 +665,9 @@ static ssize_t batadv_store_isolation_mark(struct kobject *kobj,
 	return count;
 }
 
-BATADV_ATTR_SIF_BOOL(aggregated_ogms, 0644, NULL);
+BATADV_ATTR_SIF_BOOL(aggregation, 0644, NULL);
+static BATADV_ATTR(aggregated_ogms, 0644, batadv_show_aggregation,
+		   batadv_store_aggregation);
 BATADV_ATTR_SIF_BOOL(bonding, 0644, NULL);
 #ifdef CONFIG_BATMAN_ADV_BLA
 BATADV_ATTR_SIF_BOOL(bridge_loop_avoidance, 0644, batadv_bla_status_update);
@@ -698,6 +700,7 @@ static BATADV_ATTR(isolation_mark, 0644, batadv_show_isolation_mark,
 
 static struct batadv_attribute *batadv_mesh_attrs[] = {
 	&batadv_attr_aggregated_ogms,
+	&batadv_attr_aggregation,
 	&batadv_attr_bonding,
 #ifdef CONFIG_BATMAN_ADV_BLA
 	&batadv_attr_bridge_loop_avoidance,

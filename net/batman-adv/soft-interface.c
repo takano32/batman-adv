@@ -779,7 +779,10 @@ static int batadv_softif_init_late(struct net_device *dev)
 	if (!bat_priv->bat_counters)
 		return -ENOMEM;
 
-	atomic_set(&bat_priv->aggregated_ogms, 1);
+	atomic_set(&bat_priv->aggregation, 1);
+#ifdef CONFIG_BATMAN_ADV_AGGR
+	atomic_set(&bat_priv->aggr_num_disabled, 0);
+#endif
 	atomic_set(&bat_priv->bonding, 0);
 #ifdef CONFIG_BATMAN_ADV_BLA
 	atomic_set(&bat_priv->bridge_loop_avoidance, 1);
@@ -962,10 +965,16 @@ static const struct {
 	{ "frag_fwd" },
 	{ "frag_fwd_bytes" },
 #ifdef CONFIG_BATMAN_ADV_AGGR
+	{ "aggr_tx" },
+	{ "aggr_tx_bytes" },
 	{ "aggr_rx" },
 	{ "aggr_rx_bytes" },
+	{ "aggr_parts_tx" },
+	{ "aggr_parts_tx_bytes" },
 	{ "aggr_parts_rx" },
 	{ "aggr_parts_rx_bytes" },
+	{ "aggr_queue_full" },
+	{ "aggr_urgent" },
 #endif
 	{ "tt_request_tx" },
 	{ "tt_request_rx" },

@@ -38,6 +38,7 @@
 #include <net/net_namespace.h>
 #include <net/rtnetlink.h>
 
+#include "aggregation.h"
 #include "bat_v.h"
 #include "bridge_loop_avoidance.h"
 #include "debugfs.h"
@@ -746,6 +747,8 @@ int batadv_hardif_enable_interface(struct batadv_hard_iface *hard_iface,
 	if (ret < 0)
 		goto err_upper;
 
+	batadv_aggr_hardif_start(hard_iface);
+
 	hard_iface->if_num = bat_priv->num_ifaces;
 	bat_priv->num_ifaces++;
 	hard_iface->if_status = BATADV_IF_INACTIVE;
@@ -832,6 +835,7 @@ void batadv_hardif_disable_interface(struct batadv_hard_iface *hard_iface,
 			batadv_hardif_put(new_if);
 	}
 
+	batadv_aggr_hardif_stop(hard_iface);
 	bat_priv->algo_ops->iface.disable(hard_iface);
 	hard_iface->if_status = BATADV_IF_NOT_IN_USE;
 
@@ -901,6 +905,7 @@ batadv_hardif_add_interface(struct net_device *net_dev)
 		hard_iface->num_bcasts = BATADV_NUM_BCASTS_WIRELESS;
 
 	batadv_v_hardif_init(hard_iface);
+	batadv_aggr_hardif_init(hard_iface);
 
 	batadv_check_known_mac_addr(hard_iface->net_dev);
 	kref_get(&hard_iface->refcount);

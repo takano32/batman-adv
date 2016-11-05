@@ -349,6 +349,16 @@ int batadv_max_header_len(void)
 	header_len = max_t(int, header_len,
 			   sizeof(struct batadv_coded_packet));
 #endif
+#ifdef CONFIG_BATMAN_ADV_AGGR
+	header_len = max_t(int, header_len,
+			   sizeof(struct batadv_aggr_packet) +
+			   sizeof(struct batadv_tvlv_hdr) +
+			   sizeof(struct batadv_bcast_packet) -
+			   sizeof(((struct batadv_bcast_packet *)0)
+				   ->packet_type) -
+			   sizeof(((struct batadv_bcast_packet *)0)
+				   ->version));
+#endif
 
 	return header_len + ETH_HLEN;
 }
