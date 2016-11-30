@@ -253,7 +253,41 @@ batadv_aggr_queue_is_full(struct batadv_hard_iface *hard_iface)
 }
 
 /**
+ * batadv_aggr_queue_tail - add packet to tail of an aggregation queue
+ * @skb: the packet to queue
+ * @hard_iface: the interface to queue on
+ *
+ * Tries to add a broadcast packet to an aggregation queue. This might fail if
+ * the queue has no more free slots available. In that case, the caller needs to
+ * take care of freeing the skb.
+ *
+ * Return: True on successful queueing, false otherwise.
+ */
+static bool batadv_aggr_queue_tail(struct sk_buff *skb,
+				   struct batadv_hard_iface *hard_iface)
+{
+	struct batadv_priv *bat_priv = netdev_priv(hard_iface->soft_iface);
+	bool ret = true;
+
+	spin_lock_bh(&hard_iface->aggr.aggr_list_lock);
+	if (batadv_aggr_queue_is_full(hard_iface)) {
+		batadv_inc_counter(bat_priv, BATADV_CNT_AGGR_QUEUE_FULL);
+		ret = false;
+	} else {
+		batadv_inc_counter(bat_priv, BATADV_CNT_AGGR_PARTS_TX);
+		batadv_add_counter(bat_priv, BATADV_CNT_AGGR_PARTS_TX_BYTES,
+				   skb->len + ETH_HLEN);
+
+		skb_queue_tail(&hard_iface->aggr.aggr_list, skb);
+	}
+	spin_unlock_bh(&hard_iface->aggr.aggr_list_lock);
+
+	return ret;
+}
+
+/**
  * batadv_aggr_squash_chunk - squash packets into an aggregate
+ * @hard_iface: the interface to potentially requeue on
  * @head: a list of to be squashed packets
  * @size: the size of the to be created aggregation packet
  *  (excluding the ethernet header)
@@ -261,11 +295,14 @@ batadv_aggr_queue_is_full(struct batadv_hard_iface *hard_iface)
  * Allocates an aggregation packet and squashes the provided list of broadcast
  * packets into it. The provided list of packets is freed/consumed.
  *
+ * Batman broadcast packets are potentially requeued.
+ *
  * Return: An aggregation packet ready for transmission on success, NULL
  * otherwise.
  */
 static struct sk_buff *
-batadv_aggr_squash_chunk(struct sk_buff_head *head,
+batadv_aggr_squash_chunk(struct batadv_hard_iface *hard_iface,
+			 struct sk_buff_head *head,
 			 int size)
 {
 	struct sk_buff *skb, *skb_tmp, *skb_aggr;
@@ -296,7 +333,15 @@ batadv_aggr_squash_chunk(struct sk_buff_head *head,
 		to = skb_put(skb_aggr, len);
 		skb_copy_bits(skb, offset, to, len);
 		skb_unlink(skb, head);
-		consume_skb(skb);
+
+		batadv_send_bcasts_inc(skb);
+
+		if (batadv_send_bcasts_left(skb, hard_iface)) {
+			if (!batadv_aggr_queue_tail(skb, hard_iface))
+				kfree_skb(skb);
+		} else {
+			consume_skb(skb);
+		}
 
 		tvlv_len += len + sizeof(struct batadv_tvlv_hdr);
 	}
@@ -345,7 +390,7 @@ static bool batadv_aggr_send_chunk(struct batadv_hard_iface *hard_iface)
 	skb_queue_head_init(&head);
 	emptied = batadv_aggr_get_chunk(hard_iface, &head, &size);
 
-	skb = batadv_aggr_squash_chunk(&head, size);
+	skb = batadv_aggr_squash_chunk(hard_iface, &head, size);
 	if (!skb)
 		goto out;
 
@@ -394,6 +439,7 @@ static void batadv_aggr_work(struct work_struct *work)
 int batadv_aggr_queue(struct sk_buff *skb, struct batadv_hard_iface *hard_iface)
 {
 	struct batadv_priv *bat_priv = netdev_priv(hard_iface->soft_iface);
+	int ret;
 
 	if (!atomic_read(&bat_priv->aggregation))
 		return NET_XMIT_DROP;
@@ -401,18 +447,15 @@ int batadv_aggr_queue(struct sk_buff *skb, struct batadv_hard_iface *hard_iface)
 	if (atomic_read(&bat_priv->aggr_num_disabled))
 		return NET_XMIT_DROP;
 
-	if (batadv_aggr_queue_is_full(hard_iface)) {
-		batadv_inc_counter(bat_priv, BATADV_CNT_AGGR_QUEUE_FULL);
-		return NET_XMIT_DROP;
+	/* we handle rebroadcasts here instead of the forw_packet API */
+	if (batadv_send_is_rebroadcast(skb)) {
+		consume_skb(skb);
+		return NET_XMIT_SUCCESS;
 	}
 
-	spin_lock_bh(&hard_iface->aggr.aggr_list_lock);
-	skb_queue_tail(&hard_iface->aggr.aggr_list, skb);
-	spin_unlock_bh(&hard_iface->aggr.aggr_list_lock);
-
-	batadv_inc_counter(bat_priv, BATADV_CNT_AGGR_PARTS_TX);
-	batadv_add_counter(bat_priv, BATADV_CNT_AGGR_PARTS_TX_BYTES,
-			   skb->len + ETH_HLEN);
+	ret = batadv_aggr_queue_tail(skb, hard_iface);
+	if (!ret)
+		return NET_XMIT_DROP;
 
 	return NET_XMIT_SUCCESS;
 }

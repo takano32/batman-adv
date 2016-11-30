@@ -1424,10 +1424,13 @@ struct batadv_nc_packet {
  * @decoded: Marks a skb as decoded, which is checked when searching for coding
  *  opportunities in network-coding.c
  * @num_bcasts: Counter for broadcast packet retransmissions
+ * @resend: Whether this packet should be transmitted more than once on wireless
+ *  interfaces
  */
 struct batadv_skb_cb {
 	bool decoded;
 	unsigned int num_bcasts;
+	bool resend;
 };
 
 /**
