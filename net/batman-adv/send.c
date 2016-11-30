@@ -492,6 +492,8 @@ void batadv_forw_packet_free(struct batadv_forw_packet *forw_packet,
  * @queue_left: The (optional) queue counter to decrease
  * @bat_priv: The bat_priv for the mesh of this forw_packet
  * @skb: The raw packet this forwarding packet shall contain
+ * @resend: Whether this packet should be transmitted more than once on wireless
+ *  interfaces
  *
  * Allocates a forwarding packet and tries to get a reference to the
  * (optional) if_incoming, if_outgoing and queue_left. If queue_left
@@ -504,7 +506,8 @@ batadv_forw_packet_alloc(struct batadv_hard_iface *if_incoming,
 			 struct batadv_hard_iface *if_outgoing,
 			 atomic_t *queue_left,
 			 struct batadv_priv *bat_priv,
-			 struct sk_buff *skb)
+			 struct sk_buff *skb,
+			 bool resend)
 {
 	struct batadv_forw_packet *forw_packet;
 	const char *qname;
@@ -541,6 +544,8 @@ batadv_forw_packet_alloc(struct batadv_hard_iface *if_incoming,
 	forw_packet->if_incoming = if_incoming;
 	forw_packet->if_outgoing = if_outgoing;
 	forw_packet->num_packets = 0;
+
+	BATADV_SKB_CB(forw_packet->skb)->resend = resend;
 
 	return forw_packet;
 
@@ -775,7 +780,7 @@ int batadv_add_bcast_packet_to_list(struct batadv_priv *bat_priv,
 
 	forw_packet = batadv_forw_packet_alloc(primary_if, NULL,
 					       &bat_priv->bcast_queue_left,
-					       bat_priv, newskb);
+					       bat_priv, newskb, true);
 	batadv_hardif_put(primary_if);
 	if (!forw_packet)
 		goto err_packet_free;
@@ -799,6 +804,34 @@ err:
 }
 
 /**
+ * batadv_send_bcasts_left - check if a retransmission is necessary
+ * @skb: the packet to check
+ * @hard_iface: the interface to check on
+ *
+ * Checks whether a given packet has any (re)transmissions left on the provided
+ * interface.
+ *
+ * hard_iface may be NULL: In that case the number of transmissions this skb had
+ * so far is compared with the maximum amount of retransmissions independent of
+ * any interface instead.
+ *
+ * Return: True if (re)transmissions are left, false otherwise.
+ */
+bool batadv_send_bcasts_left(struct sk_buff *skb,
+			     struct batadv_hard_iface *hard_iface)
+{
+	bool resend = !hard_iface || BATADV_SKB_CB(skb)->resend;
+	unsigned int max;
+
+	if (hard_iface)
+		max = hard_iface->num_bcasts;
+	else
+		max = BATADV_NUM_BCASTS_MAX;
+
+	return resend && BATADV_SKB_CB(skb)->num_bcasts < max;
+}
+
+/**
  * batadv_forw_packet_bcasts_left - check if a retransmission is necessary
  * @forw_packet: the forwarding packet to check
  * @hard_iface: the interface to check on
@@ -816,14 +849,16 @@ static bool
 batadv_forw_packet_bcasts_left(struct batadv_forw_packet *forw_packet,
 			       struct batadv_hard_iface *hard_iface)
 {
-	unsigned int max;
+	return batadv_send_bcasts_left(forw_packet->skb, hard_iface);
+}
 
-	if (hard_iface)
-		max = hard_iface->num_bcasts;
-	else
-		max = BATADV_NUM_BCASTS_MAX;
-
-	return BATADV_SKB_CB(forw_packet->skb)->num_bcasts < max;
+/**
+ * batadv_send_bcasts_inc - increment the retransmission counter of an skb
+ * @skb: the packet to increase the counter for
+ */
+void batadv_send_bcasts_inc(struct sk_buff *skb)
+{
+	BATADV_SKB_CB(skb)->num_bcasts++;
 }
 
 /**
@@ -833,7 +868,18 @@ batadv_forw_packet_bcasts_left(struct batadv_forw_packet *forw_packet,
 static void
 batadv_forw_packet_bcasts_inc(struct batadv_forw_packet *forw_packet)
 {
-	BATADV_SKB_CB(forw_packet->skb)->num_bcasts++;
+	batadv_send_bcasts_inc(forw_packet->skb);
+}
+
+/**
+ * batadv_send_is_rebroadcast - check whether this packet was transmitted before
+ * @skb: the packet to check
+ *
+ * Return: True if this packet was transmitted already, false otherwise.
+ */
+bool batadv_send_is_rebroadcast(struct sk_buff *skb)
+{
+	return BATADV_SKB_CB(skb)->num_bcasts > 0;
 }
 
 /**
@@ -844,7 +890,7 @@ batadv_forw_packet_bcasts_inc(struct batadv_forw_packet *forw_packet)
  */
 bool batadv_forw_packet_is_rebroadcast(struct batadv_forw_packet *forw_packet)
 {
-	return BATADV_SKB_CB(forw_packet->skb)->num_bcasts > 0;
+	return batadv_send_is_rebroadcast(forw_packet->skb);
 }
 
 static void batadv_send_outstanding_bcast_packet(struct work_struct *work)

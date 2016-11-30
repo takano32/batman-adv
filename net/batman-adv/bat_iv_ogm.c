@@ -697,7 +697,8 @@ static void batadv_iv_ogm_aggregate_new(const unsigned char *packet_buff,
 		return;
 
 	forw_packet_aggr = batadv_forw_packet_alloc(if_incoming, if_outgoing,
-						    queue_left, bat_priv, skb);
+						    queue_left, bat_priv, skb,
+						    false);
 	if (!forw_packet_aggr) {
 		kfree_skb(skb);
 		return;

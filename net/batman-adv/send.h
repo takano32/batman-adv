@@ -35,12 +35,18 @@ batadv_forw_packet_alloc(struct batadv_hard_iface *if_incoming,
 			 struct batadv_hard_iface *if_outgoing,
 			 atomic_t *queue_left,
 			 struct batadv_priv *bat_priv,
-			 struct sk_buff *skb);
+			 struct sk_buff *skb,
+			 bool resend);
 bool batadv_forw_packet_steal(struct batadv_forw_packet *packet, spinlock_t *l);
 void batadv_forw_packet_ogmv1_queue(struct batadv_priv *bat_priv,
 				    struct batadv_forw_packet *forw_packet,
 				    unsigned long send_time);
 bool batadv_forw_packet_is_rebroadcast(struct batadv_forw_packet *forw_packet);
+
+bool batadv_send_bcasts_left(struct sk_buff *skb,
+			     struct batadv_hard_iface *hard_iface);
+void batadv_send_bcasts_inc(struct sk_buff *skb);
+bool batadv_send_is_rebroadcast(struct sk_buff *skb);
 
 int batadv_send_skb_to_orig(struct sk_buff *skb,
 			    struct batadv_orig_node *orig_node,
