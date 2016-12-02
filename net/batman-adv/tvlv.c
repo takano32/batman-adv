@@ -497,12 +497,12 @@ static void batadv_tvlv_call_unfound_handlers(struct batadv_priv *bat_priv,
  * any TVLV handler called successfully. Returns NET_RX_DROP otherwise.
  */
 int batadv_tvlv_containers_process2(struct batadv_priv *bat_priv,
-				    const struct sk_buff *skb, u8 packet_type,
+				    struct sk_buff *skb, u8 packet_type,
 				    unsigned int tvlv_offset,
 				    u16 tvlv_value_len, void *ctx)
 {
 	struct batadv_tvlv_hdr *tvlv_hdr, tvlv_hdr_buff;
-	u8 *tvlv_value, tvlv_value_buff[128];
+	u8 *tvlv_value, tvlv_value_buff[256];
 	u16 tvlv_value_cont_len;
 	int ret = NET_RX_SUCCESS;
 
@@ -517,12 +517,14 @@ int batadv_tvlv_containers_process2(struct batadv_priv *bat_priv,
 		tvlv_offset += sizeof(*tvlv_hdr);
 		tvlv_value_len -= sizeof(*tvlv_hdr);
 
-		if (tvlv_value_cont_len > sizeof(tvlv_value_buff)) {
-			pr_warn_once("batman-adv: TVLVs greater than 128 bytes unsupported for now, ignoring\n");
-			goto skip_handler_call;
-		}
-
 		if (tvlv_value_cont_len > tvlv_value_len)
+			return NET_RX_DROP;
+
+		/* check for sufficient space either in stack buffer or
+		 * in skb's linear data buffer
+		 */
+		if (tvlv_value_cont_len > sizeof(tvlv_value_buff) &&
+		    !pskb_may_pull(skb, tvlv_offset + tvlv_value_cont_len))
 			return NET_RX_DROP;
 
 		tvlv_value = skb_header_pointer(skb, tvlv_offset,
@@ -535,7 +537,7 @@ int batadv_tvlv_containers_process2(struct batadv_priv *bat_priv,
 						 tvlv_hdr->type,
 						 tvlv_hdr->version, tvlv_value,
 						 tvlv_value_cont_len, ctx);
-skip_handler_call:
+
 		tvlv_offset += tvlv_value_cont_len;
 		tvlv_value_len -= tvlv_value_cont_len;
 	}
@@ -626,7 +628,7 @@ int batadv_tvlv_containers_process(struct batadv_priv *bat_priv,
  * OGM header.
  */
 void batadv_tvlv_ogm_receive(struct batadv_priv *bat_priv,
-			     const struct sk_buff *skb,
+			     struct sk_buff *skb,
 			     struct batadv_orig_node *orig_node)
 {
 	struct batadv_ogm_packet *ogm_packet;
