@@ -31,7 +31,7 @@ u16 batadv_tvlv_container_ogm_append(struct batadv_priv *bat_priv,
 				     unsigned char **packet_buff,
 				     int *packet_buff_len, int packet_min_len);
 void batadv_tvlv_ogm_receive(struct batadv_priv *bat_priv,
-			     const struct sk_buff *skb,
+			     struct sk_buff *skb,
 			     struct batadv_orig_node *orig_node);
 void batadv_tvlv_container_unregister(struct batadv_priv *bat_priv,
 				      u8 type, u8 version);
@@ -65,7 +65,7 @@ int batadv_tvlv_containers_process(struct batadv_priv *bat_priv,
 				   u8 *src, u8 *dst,
 				   void *tvlv_buff, u16 tvlv_buff_len);
 int batadv_tvlv_containers_process2(struct batadv_priv *bat_priv,
-				    const struct sk_buff *skb, u8 packet_type,
+				    struct sk_buff *skb, u8 packet_type,
 				    unsigned int tvlv_offset,
 				    u16 tvlv_value_len, void *ctx);
 void batadv_tvlv_unicast_send(struct batadv_priv *bat_priv, u8 *src,

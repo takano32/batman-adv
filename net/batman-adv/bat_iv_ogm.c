@@ -1410,7 +1410,7 @@ out:
  * @if_outgoing: the interface for which the packet should be considered
  */
 static void
-batadv_iv_ogm_process_per_outif(const struct sk_buff *skb, int ogm_offset,
+batadv_iv_ogm_process_per_outif(struct sk_buff *skb, int ogm_offset,
 				struct batadv_orig_node *orig_node,
 				struct batadv_hard_iface *if_incoming,
 				struct batadv_hard_iface *if_outgoing)
@@ -1614,7 +1614,7 @@ out:
  * @ogm_offset: offset to the OGM which should be processed (for aggregates)
  * @if_incoming: the interface where this packet was receved
  */
-static void batadv_iv_ogm_process(const struct sk_buff *skb, int ogm_offset,
+static void batadv_iv_ogm_process(struct sk_buff *skb, int ogm_offset,
 				  struct batadv_hard_iface *if_incoming)
 {
 	struct batadv_priv *bat_priv = netdev_priv(if_incoming->soft_iface);

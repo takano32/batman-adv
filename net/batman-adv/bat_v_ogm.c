@@ -603,7 +603,7 @@ out:
  */
 static void
 batadv_v_ogm_process_per_outif(struct batadv_priv *bat_priv,
-			       const struct sk_buff *skb,
+			       struct sk_buff *skb,
 			       const struct batadv_ogm2_packet *ogm2,
 			       struct batadv_orig_node *orig_node,
 			       struct batadv_neigh_node *neigh_node,
@@ -673,7 +673,7 @@ static bool batadv_v_ogm_aggr_packet(int buff_pos, int packet_len,
  * @ogm_offset: offset to the OGM which should be processed (for aggregates)
  * @if_incoming: the interface where this packet was receved
  */
-static void batadv_v_ogm_process(const struct sk_buff *skb, int ogm_offset,
+static void batadv_v_ogm_process(struct sk_buff *skb, int ogm_offset,
 				 struct batadv_hard_iface *if_incoming)
 {
 	struct batadv_priv *bat_priv = netdev_priv(if_incoming->soft_iface);
