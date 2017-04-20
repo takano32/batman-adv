@@ -1691,6 +1691,10 @@ static bool batadv_tt_global_add(struct batadv_priv *bat_priv,
 	 * for a roaming advertisement instead of manually messing up the global
 	 * table
 	 */
+
+	if (is_multicast_ether_addr(tt_addr) || is_zero_ether_addr(tt_addr))
+		flags &= ~BATADV_TT_SYNC_MASK;
+
 	if ((flags & BATADV_TT_CLIENT_TEMP) && tt_local_entry &&
 	    !(tt_local_entry->common.flags & BATADV_TT_CLIENT_NEW))
 		goto out;
@@ -2962,6 +2966,7 @@ static bool batadv_tt_global_valid(const void *entry_ptr,
  * @tvlv_buff: pointer to the buffer to fill with the TT data
  * @valid_cb: function to filter tt change entries and to return TT flags
  * @cb_data: data passed to the filter function as argument
+ * @intermediate: is it intermediate response
  *
  * Fills the tvlv buff with the tt entries from the specified hash. If valid_cb
  * is not provided then this becomes a no-op.
@@ -2972,7 +2977,7 @@ static void batadv_tt_tvlv_generate(struct batadv_priv *bat_priv,
 				    bool (*valid_cb)(const void *,
 						     const void *,
 						     u8 *flags),
-				    void *cb_data)
+				    void *cb_data, bool intermediate)
 {
 	struct batadv_tt_common_entry *tt_common_entry;
 	struct batadv_tvlv_tt_change *tt_change;
@@ -3003,6 +3008,12 @@ static void batadv_tt_tvlv_generate(struct batadv_priv *bat_priv,
 
 			ether_addr_copy(tt_change->addr, tt_common_entry->addr);
 			tt_change->flags = flags;
+
+			if (intermediate &&
+			    (is_multicast_ether_addr(tt_common_entry->addr) ||
+			     is_zero_ether_addr(tt_common_entry->addr)))
+				tt_change->flags &= ~BATADV_TT_SYNC_MASK;
+
 			tt_change->vid = htons(tt_common_entry->vid);
 			memset(tt_change->reserved, 0,
 			       sizeof(tt_change->reserved));
@@ -3262,20 +3273,7 @@ static bool batadv_send_other_tt_response(struct batadv_priv *bat_priv,
 	 * TT entries fit a single packet as possible only
 	 */
 	if (!full_table) {
-		spin_lock_bh(&req_dst_orig_node->tt_buff_lock);
-		tt_len = req_dst_orig_node->tt_buff_len;
-
-		tvlv_len = batadv_tt_prepare_tvlv_global_data(req_dst_orig_node,
-							      &tvlv_tt_data,
-							      &tt_change,
-							      &tt_len);
-		if (!tt_len)
-			goto unlock;
-
-		/* Copy the last orig_node's OGM buffer */
-		memcpy(tt_change, req_dst_orig_node->tt_buff,
-		       req_dst_orig_node->tt_buff_len);
-		spin_unlock_bh(&req_dst_orig_node->tt_buff_lock);
+		goto out;
 	} else {
 		/* allocate the tvlv, put the tt_data and all the tt_vlan_data
 		 * in the initial part
@@ -3292,7 +3290,7 @@ static bool batadv_send_other_tt_response(struct batadv_priv *bat_priv,
 		batadv_tt_tvlv_generate(bat_priv, bat_priv->tt.global_hash,
 					tt_change, tt_len,
 					batadv_tt_global_valid,
-					req_dst_orig_node);
+					req_dst_orig_node, true);
 	}
 
 	/* Don't send the response, if larger than fragmented packet. */
@@ -3420,7 +3418,7 @@ static bool batadv_send_my_tt_response(struct batadv_priv *bat_priv,
 		/* fill the rest of the tvlv with the real TT entries */
 		batadv_tt_tvlv_generate(bat_priv, bat_priv->tt.local_hash,
 					tt_change, tt_len,
-					batadv_tt_local_valid, NULL);
+					batadv_tt_local_valid, NULL, false);
 	}
 
 	tvlv_tt_data->flags = BATADV_TT_RESPONSE;
