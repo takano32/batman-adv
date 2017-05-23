@@ -726,6 +726,7 @@ BATADV_ATTR_SIF_BOOL(aggregated_ogms, 0644, NULL);
 BATADV_ATTR_SIF_BOOL(bonding, 0644, NULL);
 #ifdef CONFIG_BATMAN_ADV_BLA
 BATADV_ATTR_SIF_BOOL(bridge_loop_avoidance, 0644, batadv_bla_status_update);
+BATADV_ATTR_SIF_BOOL(bla_gw_isolation, 0644, NULL);
 #endif
 #ifdef CONFIG_BATMAN_ADV_DAT
 BATADV_ATTR_SIF_BOOL(distributed_arp_table, 0644, batadv_dat_status_update);
@@ -758,6 +759,7 @@ static struct batadv_attribute *batadv_mesh_attrs[] = {
 	&batadv_attr_bonding,
 #ifdef CONFIG_BATMAN_ADV_BLA
 	&batadv_attr_bridge_loop_avoidance,
+	&batadv_attr_bla_gw_isolation,
 #endif
 #ifdef CONFIG_BATMAN_ADV_DAT
 	&batadv_attr_distributed_arp_table,

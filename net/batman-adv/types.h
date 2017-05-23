@@ -1010,6 +1010,9 @@ struct batadv_priv_bat_v {
  * @frag_seqno: incremental counter to identify chains of egress fragments
  * @bridge_loop_avoidance: bool indicating whether bridge loop avoidance is
  *  enabled
+ * @bla_gw_isolation: whether gateways should accept all claims independent of
+ *  the bla group. This will basically isolate each gateway (and the devices
+ *  behind it) from each other
  * @distributed_arp_table: bool indicating whether distributed ARP table is
  *  enabled
  * @multicast_mode: Enable or disable multicast optimizations on this node's
@@ -1063,6 +1066,7 @@ struct batadv_priv {
 	atomic_t frag_seqno;
 #ifdef CONFIG_BATMAN_ADV_BLA
 	atomic_t bridge_loop_avoidance;
+	atomic_t bla_gw_isolation;
 #endif
 #ifdef CONFIG_BATMAN_ADV_DAT
 	atomic_t distributed_arp_table;

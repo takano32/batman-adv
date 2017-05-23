@@ -1037,7 +1037,8 @@ static int batadv_check_claim_group(struct batadv_priv *bat_priv,
 		return 0;
 
 	/* if its already the same group, it is fine. */
-	if (bla_dst->group == bla_dst_own->group)
+	if (bla_dst->group == bla_dst_own->group ||
+	    atomic_read(&bat_priv->bla_gw_isolation))
 		return 2;
 
 	/* lets see if this originator is in our mesh */
