@@ -69,6 +69,7 @@
 #define BATADV_ELP_MIN_PROBE_SIZE 200 /* bytes */
 #define BATADV_ELP_PROBE_MAX_TX_DIFF 100 /* milliseconds */
 #define BATADV_ELP_MAX_AGE 64
+#define BATADV_ELP_TP_RUN_INTERVAL 60000 /* milliseconds */
 #define BATADV_OGM_MAX_ORIGDIFF 5
 #define BATADV_OGM_MAX_AGE 64
 
@@ -137,9 +138,11 @@
 #define BATADV_NC_NODE_TIMEOUT 10000 /* Milliseconds */
 
 /**
- * BATADV_TP_MAX_NUM - maximum number of simultaneously active tp sessions
+ * BATADV_TP_MAX_NUM_QUEUE - maximum number of queued (outgoing) tp sessions
+ * BATADV_TP_MAX_NUM_RECV - maximum number of simultaneous receiving streams
  */
-#define BATADV_TP_MAX_NUM 5
+#define BATADV_TP_MAX_NUM_QUEUE 10
+#define BATADV_TP_MAX_NUM_RECV 1
 
 /**
  * enum batadv_mesh_state - State of a soft interface

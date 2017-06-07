@@ -117,6 +117,9 @@ struct batadv_hard_iface_bat_v {
 	/** @elp_interval: time interval between two ELP transmissions */
 	atomic_t elp_interval;
 
+	/** @elp_tp_duration: throughput meter fallback test duration */
+	atomic_t elp_tp_duration;
+
 	/** @elp_seqno: current ELP sequence number */
 	atomic_t elp_seqno;
 
@@ -581,6 +584,20 @@ struct batadv_hardif_neigh_node_bat_v {
 
 	/** @metric_work: work queue callback item for metric update */
 	struct work_struct metric_work;
+
+	/**
+	 * @tp_meter_running: tp meter measurements towards this neighbor in
+	 * progress
+	 */
+	unsigned char tp_meter_running:1;
+
+	/**
+	 * @last_tp_meter_run: timestamp of last tp meter measurement completion
+	 */
+	unsigned long last_tp_meter_run;
+
+	/** @tp_meter_throughput: throughput information measured by tp meter */
+	unsigned long tp_meter_throughput;
 };
 
 /**
@@ -1323,6 +1340,16 @@ enum batadv_tp_meter_role {
 };
 
 /**
+ * enum batadv_tp_meter_caller - initiator of the tp meter session
+ * @BATADV_TP_USERSPACE: initiated by user space
+ * @BATADV_TP_ELP: initiated by ELP
+ */
+enum batadv_tp_meter_caller {
+	BATADV_TP_USERSPACE,
+	BATADV_TP_ELP
+};
+
+/**
  * struct batadv_tp_vars - tp meter private variables per session
  */
 struct batadv_tp_vars {
@@ -1344,6 +1371,9 @@ struct batadv_tp_vars {
 	/** @role: receiver/sender modi */
 	enum batadv_tp_meter_role role;
 
+	/** @caller: caller of tp meter session (user space or ELP) */
+	enum batadv_tp_meter_caller caller;
+
 	/** @sending: sending binary semaphore: 1 if sending, 0 is not */
 	atomic_t sending;
 
@@ -1352,6 +1382,9 @@ struct batadv_tp_vars {
 
 	/** @finish_work: work item for the finishing procedure */
 	struct delayed_work finish_work;
+
+	/** @test_work: work item for the test process */
+	struct work_struct test_work;
 
 	/** @test_length: test length in milliseconds */
 	u32 test_length;
@@ -1437,6 +1470,9 @@ struct batadv_tp_vars {
 
 	/** @rcu: struct used for freeing in an RCU-safe manner */
 	struct rcu_head rcu;
+
+	/** @hardif_neigh: in case of LINK test, represents the other-end */
+	struct batadv_hardif_neigh_node *hardif_neigh;
 };
 
 /**
