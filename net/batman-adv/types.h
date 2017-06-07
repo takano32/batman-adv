@@ -892,6 +892,7 @@ enum batadv_tp_meter_role {
  * @sending: sending binary semaphore: 1 if sending, 0 is not
  * @reason: reason for a stopped session
  * @finish_work: work item for the finishing procedure
+ * @test_work: work item for the test process
  * @test_length: test length in milliseconds
  * @session: TP session identifier
  * @icmp_uid: local ICMP "socket" index
@@ -929,6 +930,7 @@ struct batadv_tp_vars {
 	atomic_t sending;
 	enum batadv_tp_meter_reason reason;
 	struct delayed_work finish_work;
+	struct work_struct test_work;
 	u32 test_length;
 	u8 session[2];
 	u8 icmp_uid;
