@@ -109,8 +109,15 @@ static u32 batadv_v_elp_get_throughput(struct batadv_hardif_neigh_node *neigh)
 			 */
 			return 0;
 		}
-		if (!ret)
+
+		/* make sure the driver has filled the expected throughput
+		 * field with some data
+		 */
+		if (!ret &&
+		    (sinfo.filled & NL80211_STA_INFO_EXPECTED_THROUGHPUT))
 			return sinfo.expected_throughput / 100;
+
+		goto default_throughput;
 	}
 
 	/* if not a wifi interface, check if this device provides data via
