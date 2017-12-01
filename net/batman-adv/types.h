@@ -1557,6 +1557,9 @@ struct batadv_priv {
 	 */
 	atomic_t aggregated_ogms;
 
+	/** @play_dead: drop all rx/tx to/from device */
+	atomic_t play_dead;
+
 	/** @bonding: bool indicating whether traffic bonding is enabled */
 	atomic_t bonding;
 

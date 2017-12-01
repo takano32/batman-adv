@@ -101,6 +101,9 @@ int batadv_send_skb_packet(struct sk_buff *skb,
 	/* Save a clone of the skb to use when decoding coded packets */
 	batadv_nc_skb_store_for_decoding(bat_priv, skb);
 
+	if (atomic_read(&bat_priv->play_dead))
+		goto send_skb_err;
+
 	/* dev_queue_xmit() returns a negative result on error.	 However on
 	 * congestion and traffic shaping, it drops and returns NET_XMIT_DROP
 	 * (which is > 0). This will not be treated as an error.

@@ -37,6 +37,7 @@
 #include <net/sock.h>
 #include <uapi/linux/batadv_packet.h>
 #include <uapi/linux/batman_adv.h>
+#include <uapi/linux/batfilter_genl.h>
 
 #include "bat_algo.h"
 #include "bridge_loop_avoidance.h"
@@ -53,6 +54,7 @@
 #include "translation-table.h"
 
 struct genl_family batadv_netlink_family;
+struct genl_family batfilter_genl_family;
 
 /* multicast groups */
 enum batadv_netlink_multicast_groups {
@@ -151,6 +153,11 @@ static const struct nla_policy batadv_netlink_policy[NUM_BATADV_ATTR] = {
 	[BATADV_ATTR_ORIG_INTERVAL]		= { .type = NLA_U32 },
 	[BATADV_ATTR_ELP_INTERVAL]		= { .type = NLA_U32 },
 	[BATADV_ATTR_THROUGHPUT_OVERRIDE]	= { .type = NLA_U32 },
+};
+
+static const struct nla_policy batfilter_genl_policy[NUM_BATFILTER_ATTR] = {
+	[BATFILTER_ATTR_MESH_IFINDEX]	= { .type = NLA_U32 },
+	[BATFILTER_ATTR_PLAYDEAD]	= { .type = NLA_FLAG },
 };
 
 /**
@@ -1491,6 +1498,114 @@ struct genl_family batadv_netlink_family __ro_after_init = {
 	.n_mcgrps = ARRAY_SIZE(batadv_netlink_mcgrps),
 };
 
+static int batadv_filter_pre_doit(const struct genl_ops *ops,
+				  struct sk_buff *skb,
+				  struct genl_info *info)
+{
+	struct net *net = genl_info_net(info);
+	struct net_device *soft_iface;
+	int ifindex;
+
+	if (!info->attrs[BATFILTER_ATTR_MESH_IFINDEX])
+		return -EINVAL;
+
+	ifindex = nla_get_u32(info->attrs[BATFILTER_ATTR_MESH_IFINDEX]);
+	if (!ifindex)
+		return -EINVAL;
+
+	soft_iface = dev_get_by_index(net, ifindex);
+	if (!soft_iface)
+		return -ENODEV;
+
+	if (!batadv_softif_is_valid(soft_iface)) {
+		dev_put(soft_iface);
+		return -ENODEV;
+	}
+
+	info->user_ptr[0] = soft_iface;
+
+	return 0;
+}
+
+static void batadv_filter_post_doit(const struct genl_ops *ops,
+				    struct sk_buff *skb,
+				    struct genl_info *info)
+{
+	if (info->user_ptr[0])
+		dev_put(info->user_ptr[0]);
+}
+
+static int batadv_filter_get_playdead(struct sk_buff *skb,
+				      struct genl_info *info)
+{
+	struct batadv_priv *bat_priv = netdev_priv(info->user_ptr[0]);
+	void *msg_head;
+	struct sk_buff *msg;
+
+	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
+	if (!msg)
+		return -ENOMEM;
+
+	msg_head = genlmsg_put(msg, info->snd_portid, info->snd_seq,
+			       &batfilter_genl_family, 0,
+			       BATFILTER_CMD_GET_PLAYDEAD);
+	if (!msg_head)
+		goto nla_put_failure;
+
+	if (atomic_read(&bat_priv->play_dead) &&
+	    nla_put_flag(msg, BATFILTER_ATTR_PLAYDEAD))
+		goto nla_put_failure;
+
+	genlmsg_end(msg, msg_head);
+	return genlmsg_reply(msg, info);
+
+ nla_put_failure:
+	kfree_skb(msg);
+	return -ENOBUFS;
+}
+
+static int batadv_filter_set_playdead(struct sk_buff *skb,
+				      struct genl_info *info)
+{
+	struct batadv_priv *bat_priv = netdev_priv(info->user_ptr[0]);
+	int playdead = 0;
+
+	if (nla_get_flag(info->attrs[BATFILTER_ATTR_PLAYDEAD]))
+		playdead = 1;
+
+	atomic_set(&bat_priv->play_dead, playdead);
+
+	return 0;
+}
+
+static const struct genl_ops batfilter_genl_ops[] = {
+	{
+		.cmd = BATFILTER_CMD_GET_PLAYDEAD,
+		.flags = GENL_ADMIN_PERM,
+		.doit = batadv_filter_get_playdead,
+	},
+	{
+		.cmd = BATFILTER_CMD_SET_PLAYDEAD,
+		.flags = GENL_ADMIN_PERM,
+		.policy = batfilter_genl_policy,
+		.doit = batadv_filter_set_playdead,
+	},
+};
+
+struct genl_family batfilter_genl_family __ro_after_init = {
+	.hdrsize = 0,
+	.name = BATFILTER_GENL_NAME,
+	.version = 1,
+	.maxattr = BATFILTER_ATTR_MAX,
+	.policy = batfilter_genl_policy,
+	.netnsok = true,
+	.module = THIS_MODULE,
+	.ops = batfilter_genl_ops,
+	.n_ops = ARRAY_SIZE(batfilter_genl_ops),
+	.pre_doit = batadv_filter_pre_doit,
+	.post_doit = batadv_filter_post_doit,
+};
+
 /**
  * batadv_netlink_register() - register batadv genl netlink family
  */
@@ -1501,6 +1616,12 @@ void __init batadv_netlink_register(void)
 	ret = genl_register_family(&batadv_netlink_family);
 	if (ret)
 		pr_warn("unable to register netlink family");
+
+	ret = genl_register_family(&batfilter_genl_family);
+	if (ret) {
+		pr_warn("unable to register filter netlink family");
+		genl_unregister_family(&batadv_netlink_family);
+	}
 }
 
 /**
@@ -1509,4 +1630,5 @@ void __init batadv_netlink_register(void)
 void batadv_netlink_unregister(void)
 {
 	genl_unregister_family(&batadv_netlink_family);
+	genl_unregister_family(&batfilter_genl_family);
 }
