@@ -27,6 +27,7 @@
 #include <linux/module.h>
 #include <linux/netdevice.h>
 #include <linux/printk.h>
+#include <linux/random.h>
 #include <linux/rculist.h>
 #include <linux/rcupdate.h>
 #include <linux/skbuff.h>
@@ -155,6 +156,7 @@ int batadv_mesh_init(struct net_device *soft_iface)
 
 	spin_lock_init(&bat_priv->forw_bat_list_lock);
 	spin_lock_init(&bat_priv->forw_bcast_list_lock);
+	spin_lock_init(&bat_priv->peer_filter_lock);
 	spin_lock_init(&bat_priv->tt.changes_list_lock);
 	spin_lock_init(&bat_priv->tt.req_list_lock);
 	spin_lock_init(&bat_priv->tt.roam_list_lock);
@@ -172,6 +174,7 @@ int batadv_mesh_init(struct net_device *soft_iface)
 
 	INIT_HLIST_HEAD(&bat_priv->forw_bat_list);
 	INIT_HLIST_HEAD(&bat_priv->forw_bcast_list);
+	INIT_LIST_HEAD(&bat_priv->peer_filter_list);
 	INIT_HLIST_HEAD(&bat_priv->gw.gateway_list);
 #ifdef CONFIG_BATMAN_ADV_MCAST
 	INIT_HLIST_HEAD(&bat_priv->mcast.want_all_unsnoopables_list);
@@ -229,6 +232,22 @@ err:
 }
 
 /**
+ * batadv_peer_filter_free() - Free peer_filter entries
+ * @bat_priv: the bat priv with all the soft interface information
+ */
+static void batadv_peer_filter_free(struct batadv_priv *bat_priv)
+{
+	struct batadv_peer_filter *pf, *pfs;
+
+	spin_lock_bh(&bat_priv->peer_filter_lock);
+	list_for_each_entry_safe(pf, pfs, &bat_priv->peer_filter_list, list) {
+		list_del(&pf->list);
+		kfree(pf);
+	}
+	spin_unlock_bh(&bat_priv->peer_filter_lock);
+}
+
+/**
  * batadv_mesh_free() - Deinitialize soft interface
  * @soft_iface: netdev struct of the soft interface
  */
@@ -246,6 +265,7 @@ void batadv_mesh_free(struct net_device *soft_iface)
 	batadv_nc_mesh_free(bat_priv);
 	batadv_dat_free(bat_priv);
 	batadv_bla_free(bat_priv);
+	batadv_peer_filter_free(bat_priv);
 
 	batadv_mcast_free(bat_priv);
 
@@ -387,6 +407,137 @@ static int batadv_recv_unhandled_packet(struct sk_buff *skb,
 	return NET_RX_DROP;
 }
 
+/**
+ * batadv_add_peer_filter() - Insert peer filter entry
+ * @bat_priv: the bat priv with all the soft interface information
+ * @loss_rate: probability that a packet will be lost (0 == 0%, 255 == 100%)
+ * @mac: mac address to be added
+ *
+ * Return: 0 on success or negative error number in case of failure
+ */
+int batadv_add_peer_filter(struct batadv_priv *bat_priv, const u8 mac[ETH_ALEN],
+			   u8 loss_rate)
+{
+	struct batadv_peer_filter *peer_filter;
+	bool found = false;
+	int ret = 0;
+
+	spin_lock_bh(&bat_priv->peer_filter_lock);
+
+	/* check if this entry already exists */
+	list_for_each_entry(peer_filter, &bat_priv->peer_filter_list, list) {
+		if (!ether_addr_equal(peer_filter->mac, mac))
+			continue;
+
+		found = true;
+		break;
+	}
+
+	if (found) {
+		/* only error out when the probability didn't change */
+		if (peer_filter->loss_rate == loss_rate)
+			ret = -EEXIST;
+
+		peer_filter->loss_rate = loss_rate;
+		goto unlock;
+	}
+
+	/* create new entry */
+	peer_filter = kmalloc(sizeof(*peer_filter), GFP_ATOMIC);
+	if (!peer_filter) {
+		ret = -ENOMEM;
+		goto unlock;
+	}
+
+	ether_addr_copy(peer_filter->mac, mac);
+	peer_filter->loss_rate = loss_rate;
+	list_add_tail(&peer_filter->list, &bat_priv->peer_filter_list);
+
+unlock:
+	spin_unlock_bh(&bat_priv->peer_filter_lock);
+
+	return ret;
+}
+
+/**
+ * batadv_del_peer_filter() - Delete peer filter entry
+ * @bat_priv: the bat priv with all the soft interface information
+ * @mac: mac address to remove
+ *
+ * Return: 0 on success or negative error number in case of failure
+ */
+int batadv_del_peer_filter(struct batadv_priv *bat_priv, const u8 mac[ETH_ALEN])
+{
+	struct batadv_peer_filter *peer_filter;
+	struct batadv_peer_filter *found = NULL;
+	int ret = 0;
+
+	spin_lock_bh(&bat_priv->peer_filter_lock);
+
+	/* check if this entry exists */
+	list_for_each_entry(peer_filter, &bat_priv->peer_filter_list, list) {
+		if (!ether_addr_equal(peer_filter->mac, mac))
+			continue;
+
+		found = peer_filter;
+		break;
+	}
+
+	if (!found) {
+		ret = -ENOENT;
+		goto unlock;
+	}
+
+	/* delete entry */
+	list_del(&found->list);
+	kfree(found);
+
+unlock:
+	spin_unlock_bh(&bat_priv->peer_filter_lock);
+
+	return ret;
+}
+
+/**
+ * batadv_check_peer_filter() - Check whether packet from peer address should
+ *  not be dropped (probabilistically)
+ * @skb: socket buffer with the received packet
+ * @bat_priv: the bat priv with all the soft interface information
+ *
+ * Return: true when sender was not in the peer blacklist, false otherwise
+ */
+static bool batadv_check_peer_filter(struct sk_buff *skb,
+				     struct batadv_priv *bat_priv)
+{
+	struct ethhdr *ethhdr = (struct ethhdr *)skb_mac_header(skb);
+	struct batadv_peer_filter *peer_filter;
+	struct batadv_peer_filter *found = NULL;
+	u8 r;
+
+	spin_lock_bh(&bat_priv->peer_filter_lock);
+	list_for_each_entry(peer_filter, &bat_priv->peer_filter_list, list) {
+		if (!ether_addr_equal(peer_filter->mac, ethhdr->h_source))
+			continue;
+
+		found = peer_filter;
+		break;
+	}
+	spin_unlock_bh(&bat_priv->peer_filter_lock);
+
+	if (!found)
+		return true;
+
+	if (found->loss_rate == 255)
+		return false;
+
+	if (found->loss_rate == 0)
+		return true;
+
+	/* get some random value to determine whether skb should be dropped */
+	get_random_bytes(&r, 1);
+	return r > found->loss_rate;
+}
+
 /* incoming packets with the batman ethertype received on any active hard
  * interface
  */
@@ -442,6 +593,9 @@ int batadv_batman_skb_recv(struct sk_buff *skb, struct net_device *dev,
 		goto err_free;
 
 	if (atomic_read(&bat_priv->play_dead))
+		goto err_free;
+
+	if (!batadv_check_peer_filter(skb, bat_priv))
 		goto err_free;
 
 	/* discard frames on not active interfaces */

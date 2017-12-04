@@ -158,6 +158,8 @@ static const struct nla_policy batadv_netlink_policy[NUM_BATADV_ATTR] = {
 static const struct nla_policy batfilter_genl_policy[NUM_BATFILTER_ATTR] = {
 	[BATFILTER_ATTR_MESH_IFINDEX]	= { .type = NLA_U32 },
 	[BATFILTER_ATTR_PLAYDEAD]	= { .type = NLA_FLAG },
+	[BATFILTER_ATTR_NEIGH_ADDRESS]	= { .len = ETH_ALEN },
+	[BATFILTER_ATTR_LOSS_RATE]	= { .type = NLA_U8 },
 };
 
 /**
@@ -1578,6 +1580,112 @@ static int batadv_filter_set_playdead(struct sk_buff *skb,
 	return 0;
 }
 
+static int
+batadv_filter_get_peerfilter_entry(struct sk_buff *msg, u32 portid, u32 seq,
+				   struct batadv_peer_filter *pf)
+{
+	void *hdr;
+
+	hdr = genlmsg_put(msg, portid, seq, &batfilter_genl_family, NLM_F_MULTI,
+			  BATFILTER_CMD_GET_PEERFILTER);
+	if (!hdr)
+		return -EMSGSIZE;
+
+	if (nla_put(msg, BATFILTER_ATTR_NEIGH_ADDRESS, ETH_ALEN, pf->mac))
+		goto nla_put_failure;
+
+	if (nla_put_u8(msg, BATFILTER_ATTR_LOSS_RATE, pf->loss_rate))
+		goto nla_put_failure;
+
+	genlmsg_end(msg, hdr);
+	return 0;
+
+ nla_put_failure:
+	genlmsg_cancel(msg, hdr);
+	return -EMSGSIZE;
+}
+
+static int
+batadv_filter_get_peerfilter(struct sk_buff *msg, struct netlink_callback *cb)
+{
+	struct net *net = sock_net(cb->skb->sk);
+	int portid = NETLINK_CB(cb->skb).portid;
+	struct batadv_peer_filter *pf;
+	struct net_device *soft_iface;
+	struct batadv_priv *bat_priv;
+	int seq = cb->nlh->nlmsg_seq;
+	int skip = cb->args[0];
+	int ifindex;
+	int i = 0;
+
+	ifindex = batadv_netlink_get_ifindex(cb->nlh,
+					     BATFILTER_ATTR_MESH_IFINDEX);
+	if (!ifindex)
+		return -EINVAL;
+
+	soft_iface = dev_get_by_index(net, ifindex);
+	if (!soft_iface)
+		return -ENODEV;
+
+	if (!batadv_softif_is_valid(soft_iface)) {
+		dev_put(soft_iface);
+		return -ENODEV;
+	}
+
+	bat_priv = netdev_priv(soft_iface);
+
+	spin_lock_bh(&bat_priv->peer_filter_lock);
+	list_for_each_entry(pf, &bat_priv->peer_filter_list, list) {
+		if (i++ < skip)
+			continue;
+
+		if (batadv_filter_get_peerfilter_entry(msg, portid, seq, pf)) {
+			i--;
+			break;
+		}
+	}
+	spin_unlock_bh(&bat_priv->peer_filter_lock);
+
+	dev_put(soft_iface);
+
+	cb->args[0] = i;
+
+	return msg->len;
+}
+
+static int batadv_filter_add_peerfilter(struct sk_buff *skb,
+					struct genl_info *info)
+{
+	struct batadv_priv *bat_priv = netdev_priv(info->user_ptr[0]);
+	const u8 *neigh_addr;
+	u8 loss_rate;
+
+	if (!info->attrs[BATFILTER_ATTR_NEIGH_ADDRESS])
+		return -EINVAL;
+
+	if (!info->attrs[BATFILTER_ATTR_LOSS_RATE])
+		return -EINVAL;
+
+	neigh_addr = nla_data(info->attrs[BATFILTER_ATTR_NEIGH_ADDRESS]);
+	loss_rate = nla_get_u8(info->attrs[BATFILTER_ATTR_LOSS_RATE]);
+
+	return batadv_add_peer_filter(bat_priv, neigh_addr, loss_rate);
+}
+
+static int batadv_filter_del_peerfilter(struct sk_buff *skb,
+					struct genl_info *info)
+{
+	struct batadv_priv *bat_priv = netdev_priv(info->user_ptr[0]);
+	const u8 *neigh_addr;
+
+	if (!info->attrs[BATFILTER_ATTR_NEIGH_ADDRESS])
+		return -EINVAL;
+
+	neigh_addr = nla_data(info->attrs[BATFILTER_ATTR_NEIGH_ADDRESS]);
+
+	return batadv_del_peer_filter(bat_priv, neigh_addr);
+}
+
 static const struct genl_ops batfilter_genl_ops[] = {
 	{
 		.cmd = BATFILTER_CMD_GET_PLAYDEAD,
@@ -1587,8 +1695,22 @@ static const struct genl_ops batfilter_genl_ops[] = {
 	{
 		.cmd = BATFILTER_CMD_SET_PLAYDEAD,
 		.flags = GENL_ADMIN_PERM,
-		.policy = batfilter_genl_policy,
 		.doit = batadv_filter_set_playdead,
+	},
+	{
+		.cmd = BATFILTER_CMD_GET_PEERFILTER,
+		.flags = GENL_ADMIN_PERM,
+		.dumpit = batadv_filter_get_peerfilter,
+	},
+	{
+		.cmd = BATFILTER_CMD_ADD_PEERFILTER,
+		.flags = GENL_ADMIN_PERM,
+		.doit = batadv_filter_add_peerfilter,
+	},
+	{
+		.cmd = BATFILTER_CMD_DEL_PEERFILTER,
+		.flags = GENL_ADMIN_PERM,
+		.doit = batadv_filter_del_peerfilter,
 	},
 };
 
