@@ -76,6 +76,14 @@ Description:
 		is used to classify clients as "isolated" by the
 		Extended Isolation feature.
 
+What:		/sys/class/net/<mesh_iface>/mesh/noflood_mark
+Date:		Mar 2018
+Contact:	Linus Lüssing <linus.luessing@c0d3.blue>
+Description:
+		Defines the noflood mark (and its bitmask) which
+		will drop frames with a matching mark if they were
+		to be flooded.
+
 What:           /sys/class/net/<mesh_iface>/mesh/multicast_mode
 Date:           Feb 2014
 Contact:        Linus Lüssing <linus.luessing@web.de>

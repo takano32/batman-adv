@@ -188,6 +188,23 @@ static void batadv_interface_set_rx_mode(struct net_device *dev)
 {
 }
 
+/**
+ * batadv_send_skb_has_noflood_mark() - check if packet has a noflood mark
+ * @bat_priv: the bat priv with all the soft interface information
+ * @skb: the packet to check
+ *
+ * Return: True if the skb's mark matches a configured noflood mark and
+ * noflood mark mask. False otherwise.
+ */
+static bool
+batadv_skb_has_noflood_mark(struct batadv_priv *bat_priv, struct sk_buff *skb)
+{
+	u32 match_mark = skb->mark & bat_priv->noflood_mark_mask;
+
+	return bat_priv->noflood_mark_mask &&
+	       match_mark == bat_priv->noflood_mark;
+}
+
 static int batadv_interface_tx(struct sk_buff *skb,
 			       struct net_device *soft_iface)
 {
@@ -325,6 +342,9 @@ send:
 		 */
 		if (batadv_dat_snoop_outgoing_arp_request(bat_priv, skb))
 			brd_delay = msecs_to_jiffies(ARP_REQ_DELAY);
+
+		if (batadv_skb_has_noflood_mark(bat_priv, skb))
+			goto dropped;
 
 		if (batadv_skb_head_push(skb, sizeof(*bcast_packet)) < 0)
 			goto dropped;

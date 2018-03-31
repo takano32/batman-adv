@@ -618,6 +618,44 @@ static ssize_t batadv_show_isolation_mark(struct kobject *kobj,
 }
 
 /**
+ * batadv_store_parse_mark() - parse a mark and mask
+ * @buff: the buffer containing the user data
+ * @mark: the variable to store the mark in
+ * @mask: the variable to store the mask in
+ *
+ * Parses a string for a mark and mask. The format is expected to consist of
+ * two 32 bit hexadecimal numbers delimited by a '/'.
+ *
+ * Return: 0 on success, -EINVAL on error.
+ */
+static int batadv_store_parse_mark(char *buff, u32 *mark, u32 *mask)
+{
+	char *mask_ptr;
+
+	/* parse the mask if it has been specified, otherwise assume the mask is
+	 * the biggest possible
+	 */
+	*mask = 0xFFFFFFFF;
+	mask_ptr = strchr(buff, '/');
+	if (mask_ptr) {
+		*mask_ptr = '\0';
+		mask_ptr++;
+
+		/* the mask must be entered in hex base as it is going to be a
+		 * bitmask and not a prefix length
+		 */
+		if (kstrtou32(mask_ptr, 16, mask) < 0)
+			return -EINVAL;
+	}
+
+	/* the mark can be entered in any base */
+	if (kstrtou32(buff, 0, mark) < 0)
+		return -EINVAL;
+
+	return 0;
+}
+
+/**
  * batadv_store_isolation_mark() - parse and store the isolation mark/mask
  *  entered by the user
  * @kobj: kobject representing the private mesh sysfs directory
@@ -634,26 +672,8 @@ static ssize_t batadv_store_isolation_mark(struct kobject *kobj,
 	struct net_device *net_dev = batadv_kobj_to_netdev(kobj);
 	struct batadv_priv *bat_priv = netdev_priv(net_dev);
 	u32 mark, mask;
-	char *mask_ptr;
 
-	/* parse the mask if it has been specified, otherwise assume the mask is
-	 * the biggest possible
-	 */
-	mask = 0xFFFFFFFF;
-	mask_ptr = strchr(buff, '/');
-	if (mask_ptr) {
-		*mask_ptr = '\0';
-		mask_ptr++;
-
-		/* the mask must be entered in hex base as it is going to be a
-		 * bitmask and not a prefix length
-		 */
-		if (kstrtou32(mask_ptr, 16, &mask) < 0)
-			return -EINVAL;
-	}
-
-	/* the mark can be entered in any base */
-	if (kstrtou32(buff, 0, &mark) < 0)
+	if (batadv_store_parse_mark(buff, &mark, &mask) < 0)
 		return -EINVAL;
 
 	bat_priv->isolation_mark_mask = mask;
@@ -663,6 +683,56 @@ static ssize_t batadv_store_isolation_mark(struct kobject *kobj,
 	batadv_info(net_dev,
 		    "New skb mark for extended isolation: %#.8x/%#.8x\n",
 		    bat_priv->isolation_mark, bat_priv->isolation_mark_mask);
+
+	return count;
+}
+
+/**
+ * batadv_show_noflood_mark() - print the current noflood mark/mask
+ * @kobj: kobject representing the private mesh sysfs directory
+ * @attr: the batman-adv attribute the user is interacting with
+ * @buff: the buffer that will contain the data to send back to the user
+ *
+ * Return: the number of bytes written into 'buff' on success or a negative
+ * error code in case of failure
+ */
+static ssize_t batadv_show_noflood_mark(struct kobject *kobj,
+					struct attribute *attr, char *buff)
+{
+	struct batadv_priv *bat_priv = batadv_kobj_to_batpriv(kobj);
+
+	return sprintf(buff, "%#.8x/%#.8x\n", bat_priv->noflood_mark,
+		       bat_priv->noflood_mark_mask);
+}
+
+/**
+ * batadv_store_noflood_mark() - parse and store the noflood mark/mask
+ *  entered by the user
+ * @kobj: kobject representing the private mesh sysfs directory
+ * @attr: the batman-adv attribute the user is interacting with
+ * @buff: the buffer containing the user data
+ * @count: number of bytes in the buffer
+ *
+ * Return: 'count' on success or a negative error code in case of failure
+ */
+static ssize_t batadv_store_noflood_mark(struct kobject *kobj,
+					 struct attribute *attr, char *buff,
+					 size_t count)
+{
+	struct net_device *net_dev = batadv_kobj_to_netdev(kobj);
+	struct batadv_priv *bat_priv = netdev_priv(net_dev);
+	u32 mark, mask;
+
+	if (batadv_store_parse_mark(buff, &mark, &mask) < 0)
+		return -EINVAL;
+
+	bat_priv->noflood_mark_mask = mask;
+	/* erase bits not covered by the mask */
+	bat_priv->noflood_mark = mark & bat_priv->noflood_mark_mask;
+
+	batadv_info(net_dev,
+		    "New skb noflood mark: %#.8x/%#.8x\n",
+		    bat_priv->noflood_mark, bat_priv->noflood_mark_mask);
 
 	return count;
 }
@@ -697,6 +767,8 @@ BATADV_ATTR_SIF_BOOL(network_coding, 0644, batadv_nc_status_update);
 #endif
 static BATADV_ATTR(isolation_mark, 0644, batadv_show_isolation_mark,
 		   batadv_store_isolation_mark);
+static BATADV_ATTR(noflood_mark, 0644, batadv_show_noflood_mark,
+		   batadv_store_noflood_mark);
 
 static struct batadv_attribute *batadv_mesh_attrs[] = {
 	&batadv_attr_aggregated_ogms,
@@ -724,6 +796,7 @@ static struct batadv_attribute *batadv_mesh_attrs[] = {
 	&batadv_attr_network_coding,
 #endif
 	&batadv_attr_isolation_mark,
+	&batadv_attr_noflood_mark,
 	NULL,
 };
 

@@ -1583,6 +1583,18 @@ struct batadv_priv {
 	 */
 	u32 isolation_mark_mask;
 
+	/**
+	 * @noflood_mark: the skb->mark value used to allow directed targeting
+	 *  only
+	 */
+	u32 noflood_mark;
+
+	/**
+	 * @noflood_mark_mask: bitmask identifying the bits in skb->mark to be
+	 *  used for the noflood mark
+	 */
+	u32 noflood_mark_mask;
+
 	/** @bcast_seqno: last sent broadcast packet sequence number */
 	atomic_t bcast_seqno;
 
