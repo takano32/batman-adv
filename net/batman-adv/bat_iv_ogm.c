@@ -476,7 +476,8 @@ static bool batadv_iv_ogm_aggr_packet(int buff_pos, int packet_len,
 	next_buff_pos += ntohs(tvlv_len);
 
 	return (next_buff_pos <= packet_len) &&
-	       (next_buff_pos <= BATADV_MAX_AGGREGATION_BYTES);
+	       (next_buff_pos <= BATADV_MAX_AGGREGATION_BYTES) &&
+	       (TODO < BATADV_MAX_AGGREGATION_PACKETS);
 }
 
 /* send a batman ogm to a given interface */
@@ -505,7 +506,7 @@ static void batadv_iv_ogm_send_to_if(struct batadv_forw_packet *forw_packet,
 		/* we might have aggregated direct link packets with an
 		 * ordinary base packet
 		 */
-		if (forw_packet->direct_link_flags & BIT(packet_num) &&
+		if (test_bit(packet_num, forw_packet->direct_link_flags) &&
 		    forw_packet->if_incoming == hard_iface)
 			batadv_ogm_packet->flags |= BATADV_DIRECTLINK;
 		else
@@ -724,12 +725,13 @@ static void batadv_iv_ogm_aggregate_new(const unsigned char *packet_buff,
 	memcpy(skb_buff, packet_buff, packet_len);
 
 	forw_packet_aggr->own = own_packet;
-	forw_packet_aggr->direct_link_flags = BATADV_NO_FLAGS;
+	bitmap_zero(forw_packet_aggr->direct_link_flags,
+		    BATADV_MAX_AGGREGATION_PACKETS);
 	forw_packet_aggr->send_time = send_time;
 
 	/* save packet direct link flag status */
 	if (direct_link)
-		forw_packet_aggr->direct_link_flags |= 1;
+		set_bit(0, forw_packet_aggr->direct_link_flags);
 
 	INIT_DELAYED_WORK(&forw_packet_aggr->delayed_work,
 			  batadv_iv_send_outstanding_bat_ogm_packet);
@@ -742,17 +744,15 @@ static void batadv_iv_ogm_aggregate(struct batadv_forw_packet *forw_packet_aggr,
 				    const unsigned char *packet_buff,
 				    int packet_len, bool direct_link)
 {
-	unsigned long new_direct_link_flag;
 
 	skb_put_data(forw_packet_aggr->skb, packet_buff, packet_len);
 	forw_packet_aggr->packet_len += packet_len;
 	forw_packet_aggr->num_packets++;
 
 	/* save packet direct link flag status */
-	if (direct_link) {
-		new_direct_link_flag = BIT(forw_packet_aggr->num_packets);
-		forw_packet_aggr->direct_link_flags |= new_direct_link_flag;
-	}
+	if (direct_link)
+		set_bit(forw_packet_aggr->num_packets,
+			forw_packet_aggr->direct_link_flags);
 }
 
 /**
