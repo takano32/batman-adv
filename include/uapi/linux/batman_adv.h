@@ -480,6 +480,16 @@ enum batadv_nl_attrs {
 	 */
 	BATADV_ATTR_MULTICAST_FANOUT,
 
+	/**
+	 * @BATADV_ATTR_NOFLOOD: defines if and how strictly flooding prevention
+	 * is configured. If the value is 0 then flood prevention is disabled.
+	 * If the value is 1 then flood prevention is enabled for all multicast
+	 * /broadcast packets excluding ICMPv6 and IGMP (cautious mode). If set
+	 * to 2 then flood prevention is enabled for all multicast/broadcast
+	 * packets (aggressive mode).
+	 */
+	BATADV_ATTR_NOFLOOD,
+
 	/* add attributes above here, update the policy in netlink.c */
 
 	/**

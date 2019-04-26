@@ -358,6 +358,10 @@ static int batadv_netlink_mesh_fill(struct sk_buff *msg,
 			atomic_read(&bat_priv->orig_interval)))
 		goto nla_put_failure;
 
+	if (nla_put_u8(msg, BATADV_ATTR_NOFLOOD,
+		       atomic_read(&bat_priv->noflood)))
+		goto nla_put_failure;
+
 	if (primary_if)
 		batadv_hardif_put(primary_if);
 
@@ -612,6 +616,12 @@ static int batadv_netlink_set_mesh(struct sk_buff *skb, struct genl_info *info)
 		orig_interval = max_t(u32, orig_interval, 2 * BATADV_JITTER);
 
 		atomic_set(&bat_priv->orig_interval, orig_interval);
+	}
+
+	if (info->attrs[BATADV_ATTR_NOFLOOD]) {
+		attr = info->attrs[BATADV_ATTR_NOFLOOD];
+
+		atomic_set(&bat_priv->noflood, nla_get_u8(attr));
 	}
 
 	batadv_netlink_notify_mesh(bat_priv);

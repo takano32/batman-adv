@@ -1576,6 +1576,12 @@ struct batadv_priv {
 #endif
 
 	/**
+	 * @noflood: option indicating whether to drop packets that would
+	 *  be flooded through the mesh otherwise
+	 */
+	atomic_t noflood;
+
+	/**
 	 * @isolation_mark: the skb->mark value used to match packets for AP
 	 *  isolation
 	 */

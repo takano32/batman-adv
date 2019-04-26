@@ -18,6 +18,11 @@
 #include <linux/gfp.h>
 #include <linux/if_ether.h>
 #include <linux/if_vlan.h>
+#include <linux/igmp.h>
+#include <linux/in.h>
+#include <linux/in6.h>
+#include <linux/ip.h>
+#include <linux/ipv6.h>
 #include <linux/jiffies.h>
 #include <linux/kernel.h>
 #include <linux/kref.h>
@@ -37,6 +42,7 @@
 #include <linux/stddef.h>
 #include <linux/string.h>
 #include <linux/types.h>
+#include <net/addrconf.h>
 #include <uapi/linux/batadv_packet.h>
 #include <uapi/linux/batman_adv.h>
 
@@ -174,6 +180,81 @@ static int batadv_interface_change_mtu(struct net_device *dev, int new_mtu)
  */
 static void batadv_interface_set_rx_mode(struct net_device *dev)
 {
+}
+
+/**
+ * batadv_softif_noflood_is_igmp() - check if a packet is IGMP
+ * @bat_priv: the bat priv with all the soft interface information
+ * @skb: the multicast/broadcast packet to check
+ *
+ * Return: True if the given skb is an IGMP packet, false otherwise.
+ */
+static bool batadv_softif_noflood_is_igmp(struct sk_buff *skb)
+{
+	int ret = ip_mc_check_igmp(skb);
+
+	if (ret == -ENOMEM || ret == -EINVAL)
+		return false;
+
+	/* ret == -ENOMSG => valid IPv6 header */
+	if (ret == -ENOMSG && ip_hdr(skb)->protocol != IPPROTO_IGMP)
+		return false;
+
+	/* it's IGMP */
+	return true;
+}
+
+/**
+ * batadv_softif_noflood_is_icmpv6() - check if a packet is ICMPv6
+ * @bat_priv: the bat priv with all the soft interface information
+ * @skb: the multicast/broadcast packet to check
+ *
+ * Return: True if the given skb is an ICMPv6 packet, false otherwise.
+ */
+static bool batadv_softif_noflood_is_icmpv6(struct sk_buff *skb)
+{
+	int ret = ipv6_mc_check_mld(skb);
+
+	if (ret == -ENOMEM || ret == -EINVAL)
+		return false;
+
+	/* ret == -ENOMSG => valid IPv6 header */
+	if (ret == -ENOMSG && ipv6_hdr(skb)->nexthdr != IPPROTO_ICMPV6)
+		return false;
+
+	/* it's ICMPv6 */
+	return true;
+}
+
+/**
+ * batadv_softif_check_noflood() - check if flood-prevention is enabled
+ * @bat_priv: the bat priv with all the soft interface information
+ * @skb: the multicast/broadcast packet to check
+ *
+ * Return: True if flood prevention is enabled for this packet type, false
+ * otherwise.
+ */
+static bool
+batadv_softif_check_noflood(struct batadv_priv *bat_priv, struct sk_buff *skb)
+{
+	int ret = atomic_read(&bat_priv->noflood);
+
+	/* disabled */
+	if (!ret)
+		return false;
+	/* aggressive mode */
+	else if (ret == 2)
+		return true;
+
+	/* exclude ICMPv6 and IGMP from "noflood" */
+	switch (ntohs(eth_hdr(skb)->h_proto)) {
+	case ETH_P_IP:
+		return !batadv_softif_noflood_is_igmp(skb);
+	case ETH_P_IPV6:
+		return !batadv_softif_noflood_is_icmpv6(skb);
+	default:
+		return true;
+	}
 }
 
 static netdev_tx_t batadv_interface_tx(struct sk_buff *skb,
@@ -325,6 +406,9 @@ send:
 		 */
 		if (batadv_dat_snoop_outgoing_arp_request(bat_priv, skb))
 			brd_delay = msecs_to_jiffies(ARP_REQ_DELAY);
+
+		if (batadv_softif_check_noflood(bat_priv, skb))
+			goto dropped;
 
 		if (batadv_skb_head_push(skb, sizeof(*bcast_packet)) < 0)
 			goto dropped;
@@ -823,6 +907,7 @@ static int batadv_softif_init_late(struct net_device *dev)
 	atomic_set(&bat_priv->log_level, 0);
 #endif
 	atomic_set(&bat_priv->fragmentation, 1);
+	atomic_set(&bat_priv->noflood, 0);
 	atomic_set(&bat_priv->packet_size_max, ETH_DATA_LEN);
 	atomic_set(&bat_priv->bcast_queue_left, BATADV_BCAST_QUEUE_LEN);
 	atomic_set(&bat_priv->batman_queue_left, BATADV_BATMAN_QUEUE_LEN);
