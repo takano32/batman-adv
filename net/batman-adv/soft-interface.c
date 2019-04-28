@@ -421,6 +421,7 @@ void batadv_interface_rx(struct net_device *soft_iface,
 {
 	struct batadv_bcast_packet *batadv_bcast_packet;
 	struct batadv_priv *bat_priv = netdev_priv(soft_iface);
+	int network_offset = ETH_HLEN;
 	struct vlan_ethhdr *vhdr;
 	struct ethhdr *ethhdr;
 	unsigned short vid;
@@ -451,13 +452,17 @@ void batadv_interface_rx(struct net_device *soft_iface,
 		vhdr = (struct vlan_ethhdr *)skb->data;
 
 		/* drop batman-in-batman packets to prevent loops */
-		if (vhdr->h_vlan_encapsulated_proto != htons(ETH_P_BATMAN))
+		if (vhdr->h_vlan_encapsulated_proto != htons(ETH_P_BATMAN)) {
+			network_offset += VLAN_HLEN;
 			break;
+		}
 
 		/* fall through */
 	case ETH_P_BATMAN:
 		goto dropped;
 	}
+
+	skb_set_network_header(skb, network_offset);
 
 	/* skb->dev & skb->pkt_type are set here */
 	skb->protocol = eth_type_trans(skb, soft_iface);
@@ -490,6 +495,9 @@ void batadv_interface_rx(struct net_device *soft_iface,
 			skb->mark &= ~bat_priv->isolation_mark_mask;
 			skb->mark |= bat_priv->isolation_mark;
 		}
+
+		/* fixup ICMPv6 Router Solicitations for RFC7772 compliance */
+		batadv_mcast_rsfix(skb);
 	} else if (batadv_is_ap_isolated(bat_priv, ethhdr->h_source,
 					 ethhdr->h_dest, vid)) {
 		goto dropped;

@@ -29,4 +29,10 @@ static inline int batadv_ipv6_mc_check_mld(struct sk_buff *skb)
 
 #endif /* < KERNEL_VERSION(4, 2, 0) */
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 1, 0)
+
+int ipv6_mc_check_icmpv6(struct sk_buff *skb);
+
+#endif /* < KERNEL_VERSION(5, 1, 0) */
+
 #endif	/* _NET_BATMAN_ADV_COMPAT_NET_ADDRCONF_H_ */

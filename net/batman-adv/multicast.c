@@ -44,6 +44,7 @@
 #include <net/genetlink.h>
 #include <net/if_inet6.h>
 #include <net/ip.h>
+#include <net/ip6_checksum.h>
 #include <net/ipv6.h>
 #include <net/netlink.h>
 #include <net/sock.h>
@@ -1212,6 +1213,127 @@ int batadv_mcast_forw_send(struct batadv_priv *bat_priv, struct sk_buff *skb,
 
 	consume_skb(skb);
 	return ret;
+}
+
+static bool batadv_mcast_rsfix_check_ipv6(struct sk_buff *skb)
+{
+	const struct ipv6hdr *ip6hdr;
+	unsigned int offset = skb_network_offset(skb) + sizeof(*ip6hdr);
+
+	if (!pskb_may_pull(skb, offset))
+		return false;
+
+	ip6hdr = ipv6_hdr(skb);
+
+	if (ip6hdr->version != 6 ||
+	    ip6hdr->nexthdr != IPPROTO_ICMPV6 ||
+	    !ipv6_addr_is_ll_all_routers(&ip6hdr->daddr))
+		return false;
+
+	if (ntohs(ip6hdr->payload_len) != sizeof(struct icmp6hdr))
+		return false;
+
+	skb_set_transport_header(skb, offset);
+
+	return true;
+}
+
+static bool batadv_mcast_rsfix_check_icmpv6(struct sk_buff *skb)
+{
+	struct icmp6hdr *icmp6hdr;
+
+	if (ipv6_mc_check_icmpv6(skb) < 0)
+		return false;
+
+	icmp6hdr = icmp6_hdr(skb);
+
+	if (icmp6hdr->icmp6_type != NDISC_ROUTER_SOLICITATION ||
+	    icmp6hdr->icmp6_code != 0)
+		return false;
+
+	return true;
+}
+
+static bool batadv_mcast_rsfix_check(struct sk_buff *skb)
+{
+	unsigned int opt_len = sizeof(struct nd_opt_hdr) + ETH_ALEN;
+	unsigned int expect_len = skb_network_offset(skb);
+
+	expect_len += sizeof(struct ipv6hdr) + sizeof(struct icmp6hdr);
+
+	if (skb->len != expect_len)
+		return false;
+
+	if (!batadv_mcast_rsfix_check_ipv6(skb) ||
+	    !batadv_mcast_rsfix_check_icmpv6(skb))
+		return false;
+
+	if (is_zero_ether_addr(eth_hdr(skb)->h_source) ||
+	    is_multicast_ether_addr(eth_hdr(skb)->h_source))
+		return false;
+
+/*	if (skb_linearize(skb) < 0 ||
+	    __skb_grow(skb, expect_len + opt_len) < 0)
+		return false;*/
+
+	if (skb_linearize(skb) < 0)
+		return false;
+
+printk("~~~ %s: skb_tailroom(): %i, skb->len: %u, tail->end: %u\n", __FUNCTION__, skb_tailroom(skb), skb->len, skb->end - skb->tail);
+
+	if (__skb_grow(skb, expect_len + opt_len) < 0)
+		return false;
+
+	__skb_trim(skb, expect_len);
+printk("~~~ %s: skb_tailroom(): %i, skb->len: %u, tail->end: %u\n", __FUNCTION__, skb_tailroom(skb), skb->len, skb->end - skb->tail);
+
+	return true;
+}
+
+void batadv_mcast_rsfix_fixhdr(struct sk_buff *skb)
+{
+	struct icmp6hdr *icmp6hdr = icmp6_hdr(skb);
+	struct ipv6hdr *ipv6hdr = ipv6_hdr(skb);
+	struct nd_opt_hdr *opt_hdr;
+	unsigned int opt_hdr_len;
+	unsigned int payload_len;
+	__wsum csum;
+
+	opt_hdr_len = sizeof(*opt_hdr) + ETH_ALEN;
+	payload_len = ntohs(ipv6hdr->payload_len) + opt_hdr_len;
+	ipv6hdr->payload_len = htons(payload_len);
+
+	icmp6hdr->icmp6_cksum = 0;
+	csum = csum_partial(icmp6hdr, payload_len, 0);
+	icmp6hdr->icmp6_cksum = csum_ipv6_magic(&ipv6hdr->saddr,
+						&ipv6hdr->daddr, payload_len,
+						IPPROTO_ICMPV6, csum);
+}
+
+void batadv_mcast_rsfix(struct sk_buff *skb)
+{
+	unsigned char addr[ETH_ALEN] = { 0x33, 0x33, 0x00, 0x00, 0x00, 0x02 };
+	struct nd_opt_hdr *opt_hdr;
+	unsigned char *source;
+
+	if (!ether_addr_equal(eth_hdr(skb)->h_dest, addr) ||
+	    eth_hdr(skb)->h_proto != ntohs(ETH_P_IPV6))
+		return;
+
+printk("~~~ %s: likely got an RS to fix\n", __FUNCTION__);
+	if (!batadv_mcast_rsfix_check(skb))
+		return;
+
+printk("~~~ %s: got an RS to fix! going to push: %lu\n", __FUNCTION__, sizeof(struct nd_opt_hdr));
+	opt_hdr = skb_put(skb, sizeof(struct nd_opt_hdr));
+	opt_hdr->nd_opt_type = ND_OPT_SOURCE_LL_ADDR;
+	opt_hdr->nd_opt_len = 1;
+
+	source = skb_put(skb, ETH_ALEN);
+	ether_addr_copy(source, eth_hdr(skb)->h_source);
+
+	batadv_mcast_rsfix_fixhdr(skb);
+printk("~~~ %s: fixing finished\n", __FUNCTION__);
 }
 
 /**

@@ -49,6 +49,8 @@ batadv_mcast_forw_mode(struct batadv_priv *bat_priv, struct sk_buff *skb,
 int batadv_mcast_forw_send(struct batadv_priv *bat_priv, struct sk_buff *skb,
 			   unsigned short vid);
 
+void batadv_mcast_rsfix(struct sk_buff *skb);
+
 void batadv_mcast_init(struct batadv_priv *bat_priv);
 
 int batadv_mcast_flags_seq_print_text(struct seq_file *seq, void *offset);

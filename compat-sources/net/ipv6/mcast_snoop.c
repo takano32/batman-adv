@@ -11,6 +11,15 @@
 #include <net/addrconf.h>
 #include <net/ip6_checksum.h>
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 1, 0)
+
+static inline __sum16 ipv6_mc_validate_checksum(struct sk_buff *skb)
+{
+	return skb_checksum_validate(skb, IPPROTO_ICMPV6, ip6_compute_pseudo);
+}
+
+#endif /* < KERNEL_VERSION(5, 1, 0) */
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)
 
 static int ipv6_mc_check_ip6hdr(struct sk_buff *skb)
@@ -121,11 +130,6 @@ static int ipv6_mc_check_mld_msg(struct sk_buff *skb)
 	}
 }
 
-static inline __sum16 ipv6_mc_validate_checksum(struct sk_buff *skb)
-{
-	return skb_checksum_validate(skb, IPPROTO_ICMPV6, ip6_compute_pseudo);
-}
-
 static int __ipv6_mc_check_mld(struct sk_buff *skb)
 
 {
@@ -187,3 +191,43 @@ int ipv6_mc_check_mld(struct sk_buff *skb)
 }
 
 #endif /* < KERNEL_VERSION(4, 2, 0) */
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 1, 0)
+
+static inline unsigned int ipv6_transport_len(const struct sk_buff *skb)
+{
+	return ntohs(ipv6_hdr(skb)->payload_len) + sizeof(struct ipv6hdr) -
+	       skb_network_header_len(skb);
+}
+
+static inline int ipv6_mc_may_pull(struct sk_buff *skb,
+                                   unsigned int len)
+{
+	if (skb_transport_offset(skb) + ipv6_transport_len(skb) < len)
+		return -EINVAL;
+
+	return pskb_may_pull(skb, len);
+}
+
+int ipv6_mc_check_icmpv6(struct sk_buff *skb)
+{
+	unsigned int len = skb_transport_offset(skb) + sizeof(struct icmp6hdr);
+	unsigned int transport_len = ipv6_transport_len(skb);
+	struct sk_buff *skb_chk;
+
+	if (!ipv6_mc_may_pull(skb, len))
+		return -EINVAL;
+
+	skb_chk = skb_checksum_trimmed(skb, transport_len,
+				       ipv6_mc_validate_checksum);
+	if (!skb_chk)
+		return -EINVAL;
+
+	if (skb_chk != skb)
+		kfree_skb(skb_chk);
+
+	return 0;
+}
+
+
+#endif /* < KERNEL_VERSION(5, 1, 0) */
