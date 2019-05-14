@@ -43,6 +43,40 @@ static int batadv_route_unicast_packet(struct sk_buff *skb,
 				       struct batadv_hard_iface *recv_if);
 
 /**
+ * batadv_route_update_direct_neigh_count() - update the direct neighbor counter
+ * @oldrouter: the previously selected router
+ * @newrouter: the newly selected router
+ * @orig: the originator (MAC) the router is updated for
+ *
+ * Updates to direct neighbor originator counter of the hard interface the old
+ * and new router belongs to.
+ */
+static void
+batadv_route_update_direct_neigh_count(struct batadv_neigh_node *oldrouter,
+				       struct batadv_neigh_node *newrouter,
+				       u8 *orig)
+{
+	bool oldrouter_is_direct = false;
+	bool newrouter_is_direct = false;
+	u8 *neigh_orig;
+
+	if (oldrouter) {
+		neigh_orig = oldrouter->hardif_neigh->orig;
+		oldrouter_is_direct = batadv_compare_eth(neigh_orig, orig);
+	}
+
+	if (newrouter) {
+		neigh_orig = newrouter->hardif_neigh->orig;
+		newrouter_is_direct = batadv_compare_eth(neigh_orig, orig);
+	}
+
+	if (oldrouter_is_direct && !newrouter_is_direct)
+		atomic_dec(&oldrouter->if_incoming->num_direct_orig);
+	else if (!oldrouter_is_direct && newrouter_is_direct)
+		atomic_inc(&newrouter->if_incoming->num_direct_orig);
+}
+
+/**
  * _batadv_update_route() - set the router for this originator
  * @bat_priv: the bat priv with all the soft interface information
  * @orig_node: orig node which is to be configured
@@ -76,6 +110,10 @@ static void _batadv_update_route(struct batadv_priv *bat_priv,
 	/* increase refcount of new best neighbor */
 	if (neigh_node)
 		kref_get(&neigh_node->refcount);
+
+	if (recv_if == BATADV_IF_DEFAULT)
+		batadv_route_update_direct_neigh_count(curr_router, neigh_node,
+						       orig_node->orig);
 
 	rcu_assign_pointer(orig_ifinfo->router, neigh_node);
 	spin_unlock_bh(&orig_node->neigh_list_lock);

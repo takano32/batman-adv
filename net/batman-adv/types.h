@@ -200,6 +200,14 @@ struct batadv_hard_iface {
 	 */
 	atomic_t num_bcast_no_urcv;
 
+	/**
+	 * @num_direct_orig: number of neighboring originators on this
+	 * interface which have a direct, 1-hop path (which is equivalent
+	 * to the number of neighbor nodes on this interface which are a
+	 * selected router)
+	 */
+	atomic_t num_direct_orig;
+
 	/** @bat_iv: per hard-interface B.A.T.M.A.N. IV data */
 	struct batadv_hard_iface_bat_iv bat_iv;
 

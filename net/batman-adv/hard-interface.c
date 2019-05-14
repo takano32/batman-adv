@@ -937,6 +937,7 @@ batadv_hardif_add_interface(struct net_device *net_dev)
 
 	batadv_v_hardif_init(hard_iface);
 	atomic_set(&hard_iface->num_bcast_no_urcv, 0);
+	atomic_set(&hard_iface->num_direct_orig, 0);
 
 	batadv_check_known_mac_addr(hard_iface->net_dev);
 	kref_get(&hard_iface->refcount);

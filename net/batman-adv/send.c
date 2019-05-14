@@ -906,6 +906,146 @@ static bool batadv_send_no_broadcast(struct batadv_priv *bat_priv,
 }
 
 /**
+ * batadv_forw_bcast_may_ucast() - check if a broadcast packet can be unicasted
+ * @bat_priv: the bat priv with all the soft interface information
+ * @if_out: the outgoing interface to check for
+ *
+ * Return: True if the number of 1-hop, direct neighbor originators on the given
+ * interface is smaller than or equal to the configured multicast fanout limit
+ * and all neighbor nodes support the reception of batman-adv broadcast
+ * packets with a unicast ethernet frame destination. Otherwise returns false.
+ */
+static bool batadv_forw_bcast_may_ucast(struct batadv_priv *bat_priv,
+					struct batadv_hard_iface *if_out)
+{
+	unsigned long num_direct_orig;
+	unsigned long num_bcast_no_urcv;
+
+	num_direct_orig = atomic_read(&if_out->num_direct_orig);
+	num_bcast_no_urcv = atomic_read(&if_out->num_bcast_no_urcv);
+
+	return !num_bcast_no_urcv &&
+	       (num_direct_orig <= atomic_read(&bat_priv->multicast_fanout));
+}
+
+/**
+ * batadv_forw_bcasts_via_ucasts_check() - check if a neighbor needs a unicast
+ * @bat_priv: the bat priv with all the soft interface information
+ * @skb: broadcast packet to check
+ * @if_out: the outgoing interface to check for
+ * @if_neigh: the neighbor node to check for
+ * @own_packet: true if it is a self-generated broadcast packet
+ *
+ * Return: True if a packet needs to be transmitted to the given neighbor,
+ * false otherwise.
+ */
+static bool
+batadv_forw_bcasts_via_ucasts_check(struct batadv_priv *bat_priv,
+				    struct sk_buff *skb,
+				    struct batadv_hard_iface *if_out,
+				    struct batadv_hardif_neigh_node *if_neigh,
+				    bool own_packet)
+{
+	u8 *bcast_orig = ((struct batadv_bcast_packet *)skb->data)->orig;
+	struct batadv_hardif_neigh_node *neigh_node = NULL;
+	struct batadv_neigh_node *router = NULL;
+	struct batadv_orig_node *orig_node;
+	bool ret = false;
+	u8 *router_addr;
+	u8 *neigh_addr;
+	u8 *orig_neigh;
+
+	if (!own_packet) {
+		neigh_addr = eth_hdr(skb)->h_source;
+		neigh_node = batadv_hardif_neigh_get(if_out,
+						     neigh_addr);
+	}
+
+	orig_neigh = neigh_node ? neigh_node->orig : NULL;
+
+	orig_node = batadv_orig_hash_find(bat_priv, if_neigh->orig);
+	if (orig_node) {
+		router = batadv_orig_router_get(orig_node, BATADV_IF_DEFAULT);
+		router_addr = router ? router->addr : NULL;
+	}
+
+	/* is the originator -> no rebroadcast */
+	if (batadv_compare_eth(if_neigh->orig, bcast_orig)) {
+		goto out;
+	/* is the one we received from -> no rebroadcast */
+	} else if (orig_neigh &&
+		   batadv_compare_eth(if_neigh->orig, orig_neigh)) {
+		goto out;
+	/* only 1-hop, direct neighbor originators */
+	} else if (router && !batadv_compare_eth(router_addr, if_neigh->addr)) {
+		goto out;
+	}
+
+	ret = true;
+out:
+	if (router)
+		batadv_neigh_node_put(router);
+	if (orig_node)
+		batadv_orig_node_put(orig_node);
+	if (neigh_node)
+		batadv_hardif_neigh_put(neigh_node);
+
+	return ret;
+}
+
+/**
+ * batadv_forw_bcast_packet_via_ucasts() - unicast a broadcast packet
+ * @bat_priv: the bat priv with all the soft interface information
+ * @skb: broadcast packet to send
+ * @own_packet: true if it is a self-generated broadcast packet
+ * @if_out: the outgoing interface to forward to
+ *
+ * Forwards a broadcast packet on the specified interface via unicast
+ * transmissions.
+ *
+ * This call clones the given skb, hence the caller needs to take into
+ * account that the data segment of the original skb might not be
+ * modifiable anymore.
+ *
+ * Return: NETDEV_TX_OK on success and NETDEV_TX_BUSY on errors.
+ */
+static int batadv_forw_bcast_via_ucasts(struct batadv_priv *bat_priv,
+					struct sk_buff *skb,
+					bool own_packet,
+					struct batadv_hard_iface *if_out)
+{
+	struct batadv_hardif_neigh_node *hardif_neigh;
+	struct sk_buff *newskb;
+	int ret = NETDEV_TX_OK;
+
+	rcu_read_lock();
+	hlist_for_each_entry_rcu(hardif_neigh, &if_out->neigh_list, list) {
+		if (!kref_get_unless_zero(&hardif_neigh->refcount))
+			continue;
+
+		if (!batadv_forw_bcasts_via_ucasts_check(bat_priv, skb, if_out,
+							 hardif_neigh,
+							 own_packet)) {
+			batadv_hardif_neigh_put(hardif_neigh);
+			continue;
+		}
+
+		newskb = skb_clone(skb, GFP_ATOMIC);
+		if (!newskb) {
+			batadv_hardif_neigh_put(hardif_neigh);
+			ret = NETDEV_TX_BUSY;
+			break;
+		}
+
+		batadv_send_skb_packet(newskb, if_out, hardif_neigh->addr);
+		batadv_hardif_neigh_put(hardif_neigh);
+	}
+	rcu_read_unlock();
+
+	return ret;
+}
+
+/**
  * __batadv_forw_bcast_packet() - forward and queue a broadcast packet
  * @bat_priv: the bat priv with all the soft interface information
  * @skb: broadcast packet to add
@@ -948,6 +1088,22 @@ static int __batadv_forw_bcast_packet(struct batadv_priv *bat_priv,
 			batadv_hardif_put(hard_iface);
 			continue;
 		}
+
+		/* try individual unicasts first */
+		if (!delay && batadv_forw_bcast_may_ucast(bat_priv,
+							  hard_iface)) {
+			ret = batadv_forw_bcast_via_ucasts(bat_priv, skb,
+							   own_packet,
+							   hard_iface);
+
+			if (ret == NETDEV_TX_BUSY) {
+				batadv_hardif_put(hard_iface);
+				break;
+			}
+
+			batadv_hardif_put(hard_iface);
+			continue;
+		} /* else: transmit via broadcast */
 
 		ret = batadv_forw_bcast_packet_if(bat_priv, skb, delay,
 						  own_packet, primary_if,
