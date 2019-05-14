@@ -30,6 +30,9 @@ batadv_hardif_neigh_get(const struct batadv_hard_iface *hard_iface,
 			const u8 *neigh_addr);
 void
 batadv_hardif_neigh_put(struct batadv_hardif_neigh_node *hardif_neigh);
+void
+batadv_hardif_neigh_update_capa(const struct batadv_orig_node *orig_node,
+				struct batadv_hardif_neigh_node *hardif_neigh);
 struct batadv_neigh_node *
 batadv_neigh_node_get_or_create(struct batadv_orig_node *orig_node,
 				struct batadv_hard_iface *hard_iface,

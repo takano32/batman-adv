@@ -193,6 +193,13 @@ struct batadv_hard_iface {
 	/** @rcu: struct used for freeing in an RCU-safe manner */
 	struct rcu_head rcu;
 
+	/**
+	 * @num_bcast_no_urcv: number of neighbor nodes on this interface which
+	 * do not support receiving batman-adv broadcast packets with a
+	 * unicast ethernet frame destination
+	 */
+	atomic_t num_bcast_no_urcv;
+
 	/** @bat_iv: per hard-interface B.A.T.M.A.N. IV data */
 	struct batadv_hard_iface_bat_iv bat_iv;
 
@@ -528,6 +535,13 @@ enum batadv_orig_capabilities {
 	 *  (= orig node announces a tvlv of type BATADV_TVLV_MCAST)
 	 */
 	BATADV_ORIG_CAPA_HAS_MCAST,
+
+	/**
+	 * BATADV_ORIG_CAPA_HAS_BCAST_URCV: orig node is able to receive
+	 * batman-adv broadcast packets with a unicast ethernet frame
+	 * destination
+	 */
+	BATADV_ORIG_CAPA_HAS_BCAST_URCV,
 };
 
 /**
@@ -599,6 +613,13 @@ struct batadv_hardif_neigh_node {
 
 	/** @last_seen: when last packet via this neighbor was received */
 	unsigned long last_seen;
+
+	/**
+	 * @bcast_has_urcv: a flag indicating whether this neighbor node
+	 * supports receiving batman-adv broadcast packets with a unicast
+	 * ethernet frame destination
+	 */
+	atomic_t bcast_has_urcv;
 
 #ifdef CONFIG_BATMAN_ADV_BATMAN_V
 	/** @bat_v: B.A.T.M.A.N. V private data */

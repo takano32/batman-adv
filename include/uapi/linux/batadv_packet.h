@@ -164,6 +164,7 @@ enum batadv_bla_claimframe {
  * @BATADV_TVLV_TT: translation table tvlv
  * @BATADV_TVLV_ROAM: roaming advertisement tvlv
  * @BATADV_TVLV_MCAST: multicast capability tvlv
+ * @BATADV_TVLV_BCAST: broadcast capability tvlv
  */
 enum batadv_tvlv_type {
 	BATADV_TVLV_GW		= 0x01,
@@ -172,6 +173,7 @@ enum batadv_tvlv_type {
 	BATADV_TVLV_TT		= 0x04,
 	BATADV_TVLV_ROAM	= 0x05,
 	BATADV_TVLV_MCAST	= 0x06,
+	BATADV_TVLV_BCAST	= 0x07,
 };
 
 #pragma pack(2)

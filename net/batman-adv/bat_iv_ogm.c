@@ -1310,8 +1310,12 @@ batadv_iv_ogm_process_per_outif(const struct sk_buff *skb, int ogm_offset,
 	if (is_single_hop_neigh) {
 		hardif_neigh = batadv_hardif_neigh_get(if_incoming,
 						       ethhdr->h_source);
-		if (hardif_neigh)
+		if (hardif_neigh) {
 			hardif_neigh->last_seen = jiffies;
+
+			batadv_hardif_neigh_update_capa(orig_node,
+							hardif_neigh);
+		}
 	}
 
 	router = batadv_orig_router_get(orig_node, if_outgoing);

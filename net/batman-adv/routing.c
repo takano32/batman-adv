@@ -1198,8 +1198,11 @@ int batadv_recv_bcast_packet(struct sk_buff *skb,
 
 	ethhdr = eth_hdr(skb);
 
-	/* packet with broadcast indication but unicast recipient */
-	if (!is_broadcast_ether_addr(ethhdr->h_dest))
+	/* packet with broadcast indication but unicast recipient
+	 * which is not us
+	 */
+	if (!is_broadcast_ether_addr(ethhdr->h_dest) &&
+	    !batadv_is_my_mac(bat_priv, ethhdr->h_dest))
 		goto free_skb;
 
 	/* packet with broadcast/multicast sender address */

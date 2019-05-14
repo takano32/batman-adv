@@ -489,6 +489,8 @@ static void batadv_v_elp_neigh_update(struct batadv_priv *bat_priv,
 	hardif_neigh->bat_v.elp_latest_seqno = ntohl(elp_packet->seqno);
 	hardif_neigh->bat_v.elp_interval = ntohl(elp_packet->elp_interval);
 
+	batadv_hardif_neigh_update_capa(orig_neigh, hardif_neigh);
+
 hardif_free:
 	if (hardif_neigh)
 		batadv_hardif_neigh_put(hardif_neigh);

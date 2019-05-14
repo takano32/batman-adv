@@ -42,6 +42,7 @@
 #include "routing.h"
 #include "soft-interface.h"
 #include "translation-table.h"
+#include "tvlv.h"
 
 /* hash class keys */
 static struct lock_class_key batadv_orig_hash_lock_class_key;
@@ -197,6 +198,26 @@ void batadv_orig_node_vlan_put(struct batadv_orig_node_vlan *orig_vlan)
 }
 
 /**
+ * batadv_orig_bcast_tvlv_ogm_handler() - process incoming broadcast tvlv
+ * @bat_priv: the bat priv with all the soft interface information
+ * @orig: the orig_node of the ogm
+ * @flags: flags indicating the tvlv state (see batadv_tvlv_handler_flags)
+ * @tvlv_value: tvlv buffer containing the multicast data
+ * @tvlv_value_len: tvlv buffer length
+ */
+static void batadv_orig_bcast_tvlv_ogm_handler(struct batadv_priv *bat_priv,
+					       struct batadv_orig_node *orig,
+					       u8 flags,
+					       void *tvlv_value,
+					       u16 tvlv_value_len)
+{
+	if (flags & BATADV_TVLV_HANDLER_OGM_CIFNOTFND)
+		clear_bit(BATADV_ORIG_CAPA_HAS_BCAST_URCV, &orig->capabilities);
+	else
+		set_bit(BATADV_ORIG_CAPA_HAS_BCAST_URCV, &orig->capabilities);
+}
+
+/**
  * batadv_originator_init() - Initialize all originator structures
  * @bat_priv: the bat priv with all the soft interface information
  *
@@ -214,6 +235,12 @@ int batadv_originator_init(struct batadv_priv *bat_priv)
 
 	batadv_hash_set_lock_class(bat_priv->orig_hash,
 				   &batadv_orig_hash_lock_class_key);
+
+	batadv_tvlv_container_register(bat_priv, BATADV_TVLV_BCAST, 1, NULL, 0);
+	batadv_tvlv_handler_register(bat_priv,
+				     batadv_orig_bcast_tvlv_ogm_handler,
+				     NULL, BATADV_TVLV_BCAST, 1,
+				     BATADV_TVLV_HANDLER_OGM_CIFNOTFND);
 
 	INIT_DELAYED_WORK(&bat_priv->orig_work, batadv_purge_orig);
 	queue_delayed_work(batadv_event_workqueue,
@@ -268,6 +295,9 @@ static void batadv_hardif_neigh_release(struct kref *ref)
 	spin_lock_bh(&hardif_neigh->if_incoming->neigh_list_lock);
 	hlist_del_init_rcu(&hardif_neigh->list);
 	spin_unlock_bh(&hardif_neigh->if_incoming->neigh_list_lock);
+
+	if (!atomic_read(&hardif_neigh->bcast_has_urcv))
+		atomic_dec(&hardif_neigh->if_incoming->num_bcast_no_urcv);
 
 	batadv_hardif_put(hardif_neigh->if_incoming);
 	kfree_rcu(hardif_neigh, rcu);
@@ -543,6 +573,34 @@ batadv_neigh_node_get(const struct batadv_orig_node *orig_node,
 }
 
 /**
+ * batadv_hardif_neigh_update_capa() - update hardif neighbor capabilities
+ * @orig_node: originator object representing the neighbour
+ * @hardif_neigh: the hardif neighbor to update
+ *
+ * Propagates neighbor node specific capabilities from an originator node onto a
+ * hardif neighbor node:
+ *
+ * This updates the broadcast-via-unicast reception capability flag of a
+ * neighbor node and updates the matching counter on the hard interfaces it
+ * belongs to.
+ */
+void
+batadv_hardif_neigh_update_capa(const struct batadv_orig_node *orig_node,
+				struct batadv_hardif_neigh_node *hardif_neigh)
+{
+	struct batadv_hard_iface *hard_iface = hardif_neigh->if_incoming;
+
+	if (test_bit(BATADV_ORIG_CAPA_HAS_BCAST_URCV,
+		     &orig_node->capabilities)) {
+		if (atomic_add_unless(&hardif_neigh->bcast_has_urcv, 1, 1))
+			atomic_dec(&hard_iface->num_bcast_no_urcv);
+	} else {
+		if (atomic_add_unless(&hardif_neigh->bcast_has_urcv, -1, 0))
+			atomic_inc(&hard_iface->num_bcast_no_urcv);
+	}
+}
+
+/**
  * batadv_hardif_neigh_create() - create a hardif neighbour node
  * @hard_iface: the interface this neighbour is connected to
  * @neigh_addr: the interface address of the neighbour to retrieve
@@ -575,6 +633,10 @@ batadv_hardif_neigh_create(struct batadv_hard_iface *hard_iface,
 	ether_addr_copy(hardif_neigh->orig, orig_node->orig);
 	hardif_neigh->if_incoming = hard_iface;
 	hardif_neigh->last_seen = jiffies;
+
+	atomic_set(&hardif_neigh->bcast_has_urcv, 0);
+	atomic_inc(&hardif_neigh->if_incoming->num_bcast_no_urcv);
+	batadv_hardif_neigh_update_capa(orig_node, hardif_neigh);
 
 	kref_init(&hardif_neigh->refcount);
 
@@ -974,6 +1036,9 @@ void batadv_originator_free(struct batadv_priv *bat_priv)
 		return;
 
 	cancel_delayed_work_sync(&bat_priv->orig_work);
+
+	batadv_tvlv_container_unregister(bat_priv, BATADV_TVLV_BCAST, 1);
+	batadv_tvlv_handler_unregister(bat_priv, BATADV_TVLV_BCAST, 1);
 
 	bat_priv->orig_hash = NULL;
 
