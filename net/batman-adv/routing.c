@@ -579,18 +579,10 @@ batadv_find_router(struct batadv_priv *bat_priv,
 		last_cand_router = rcu_dereference(last_candidate->router);
 
 	hlist_for_each_entry_rcu(cand, &orig_node->ifinfo_list, list) {
-		/* acquire some structures and references ... */
-		if (!kref_get_unless_zero(&cand->refcount))
-			continue;
 
 		cand_router = rcu_dereference(cand->router);
 		if (!cand_router)
 			goto next;
-
-		if (!kref_get_unless_zero(&cand_router->refcount)) {
-			cand_router = NULL;
-			goto next;
-		}
 
 		/* alternative candidate should be good enough to be
 		 * considered
@@ -606,8 +598,6 @@ batadv_find_router(struct batadv_priv *bat_priv,
 
 		/* mark the first possible candidate */
 		if (!first_candidate) {
-			kref_get(&cand_router->refcount);
-			kref_get(&cand->refcount);
 			first_candidate = cand;
 			first_candidate_router = cand_router;
 		}
@@ -642,13 +632,11 @@ next:
 	if (next_candidate) {
 		batadv_neigh_node_put(router);
 
-		kref_get(&next_candidate_router->refcount);
 		router = next_candidate_router;
 		batadv_last_bonding_replace(orig_node, next_candidate);
 	} else if (first_candidate) {
 		batadv_neigh_node_put(router);
 
-		kref_get(&first_candidate_router->refcount);
 		router = first_candidate_router;
 		batadv_last_bonding_replace(orig_node, first_candidate);
 	} else {

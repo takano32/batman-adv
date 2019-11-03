@@ -199,7 +199,7 @@ int batadv_send_skb_to_orig(struct sk_buff *skb,
 		/* skb was consumed */
 		skb = NULL;
 
-		goto put_neigh_node;
+		return ret;
 	}
 
 	/* try to network code the packet, if it is received on an interface
@@ -214,8 +214,6 @@ int batadv_send_skb_to_orig(struct sk_buff *skb,
 	/* skb was consumed */
 	skb = NULL;
 
-put_neigh_node:
-	batadv_neigh_node_put(neigh_node);
 free_skb:
 	kfree_skb(skb);
 
