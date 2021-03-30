@@ -25,7 +25,7 @@ int batadv_netlink_notify_mesh(struct batadv_priv *bat_priv);
 int batadv_netlink_notify_hardif(struct batadv_priv *bat_priv,
 				 struct batadv_hard_iface *hard_iface);
 int batadv_netlink_notify_vlan(struct batadv_priv *bat_priv,
-			       struct batadv_softif_vlan *vlan);
+			       struct batadv_meshif_vlan *vlan);
 
 extern struct genl_family batadv_netlink_family;
 

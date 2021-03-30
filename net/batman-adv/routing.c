@@ -33,7 +33,7 @@
 #include "network-coding.h"
 #include "originator.h"
 #include "send.h"
-#include "soft-interface.h"
+#include "mesh-interface.h"
 #include "tp_meter.h"
 #include "translation-table.h"
 #include "tvlv.h"
@@ -43,7 +43,7 @@ static int batadv_route_unicast_packet(struct sk_buff *skb,
 
 /**
  * _batadv_update_route() - set the router for this originator
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  * @orig_node: orig node which is to be configured
  * @recv_if: the receive interface for which this route is set
  * @neigh_node: neighbor which should be the next router
@@ -107,7 +107,7 @@ static void _batadv_update_route(struct batadv_priv *bat_priv,
 
 /**
  * batadv_update_route() - set the router for this originator
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  * @orig_node: orig node which is to be configured
  * @recv_if: the receive interface for which this route is set
  * @neigh_node: neighbor which should be the next router
@@ -135,7 +135,7 @@ out:
 /**
  * batadv_window_protected() - checks whether the host restarted and is in the
  *  protection time.
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  * @seq_num_diff: difference between the current/received sequence number and
  *  the last sequence number
  * @seq_old_max_diff: maximum age of sequence number not considered as restart
@@ -209,7 +209,7 @@ bool batadv_check_management_packet(struct sk_buff *skb,
 
 /**
  * batadv_recv_my_icmp_packet() - receive an icmp packet locally
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  * @skb: icmp packet to process
  *
  * Return: NET_RX_SUCCESS if the packet has been consumed or NET_RX_DROP
@@ -344,7 +344,7 @@ out:
 int batadv_recv_icmp_packet(struct sk_buff *skb,
 			    struct batadv_hard_iface *recv_if)
 {
-	struct batadv_priv *bat_priv = netdev_priv(recv_if->soft_iface);
+	struct batadv_priv *bat_priv = netdev_priv(recv_if->mesh_iface);
 	struct batadv_icmp_header *icmph;
 	struct batadv_icmp_packet_rr *icmp_packet_rr;
 	struct ethhdr *ethhdr;
@@ -435,7 +435,7 @@ free_skb:
 
 /**
  * batadv_check_unicast_packet() - Check for malformed unicast packets
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  * @skb: packet to check
  * @hdr_size: size of header to pull
  *
@@ -519,7 +519,7 @@ batadv_last_bonding_replace(struct batadv_orig_node *orig_node,
 
 /**
  * batadv_find_router() - find a suitable router for this originator
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  * @orig_node: the destination node
  * @recv_if: pointer to interface this packet was received on
  *
@@ -665,7 +665,7 @@ next:
 static int batadv_route_unicast_packet(struct sk_buff *skb,
 				       struct batadv_hard_iface *recv_if)
 {
-	struct batadv_priv *bat_priv = netdev_priv(recv_if->soft_iface);
+	struct batadv_priv *bat_priv = netdev_priv(recv_if->mesh_iface);
 	struct batadv_orig_node *orig_node = NULL;
 	struct batadv_unicast_packet *unicast_packet;
 	struct ethhdr *ethhdr = eth_hdr(skb);
@@ -736,7 +736,7 @@ free_skb:
 
 /**
  * batadv_reroute_unicast_packet() - update the unicast header for re-routing
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  * @skb: unicast packet to process
  * @unicast_packet: the unicast header to be updated
  * @dst_addr: the payload destination
@@ -889,7 +889,7 @@ static bool batadv_check_unicast_ttvn(struct batadv_priv *bat_priv,
 		return false;
 
 	/* update the header in order to let the packet be delivered to this
-	 * node's soft interface
+	 * node's mesh interface
 	 */
 	primary_if = batadv_primary_if_get_selected(bat_priv);
 	if (!primary_if)
@@ -919,7 +919,7 @@ int batadv_recv_unhandled_unicast_packet(struct sk_buff *skb,
 					 struct batadv_hard_iface *recv_if)
 {
 	struct batadv_unicast_packet *unicast_packet;
-	struct batadv_priv *bat_priv = netdev_priv(recv_if->soft_iface);
+	struct batadv_priv *bat_priv = netdev_priv(recv_if->mesh_iface);
 	int check, hdr_size = sizeof(*unicast_packet);
 
 	check = batadv_check_unicast_packet(bat_priv, skb, hdr_size);
@@ -948,7 +948,7 @@ free_skb:
 int batadv_recv_unicast_packet(struct sk_buff *skb,
 			       struct batadv_hard_iface *recv_if)
 {
-	struct batadv_priv *bat_priv = netdev_priv(recv_if->soft_iface);
+	struct batadv_priv *bat_priv = netdev_priv(recv_if->mesh_iface);
 	struct batadv_unicast_packet *unicast_packet;
 	struct batadv_unicast_4addr_packet *unicast_4addr_packet;
 	u8 *orig_addr, *orig_addr_gw;
@@ -1027,7 +1027,7 @@ int batadv_recv_unicast_packet(struct sk_buff *skb,
 
 		batadv_dat_snoop_incoming_dhcp_ack(bat_priv, skb, hdr_size);
 
-		batadv_interface_rx(recv_if->soft_iface, skb, hdr_size,
+		batadv_interface_rx(recv_if->mesh_iface, skb, hdr_size,
 				    orig_node);
 
 rx_success:
@@ -1058,7 +1058,7 @@ free_skb:
 int batadv_recv_unicast_tvlv(struct sk_buff *skb,
 			     struct batadv_hard_iface *recv_if)
 {
-	struct batadv_priv *bat_priv = netdev_priv(recv_if->soft_iface);
+	struct batadv_priv *bat_priv = netdev_priv(recv_if->mesh_iface);
 	struct batadv_unicast_tvlv_packet *unicast_tvlv_packet;
 	unsigned char *tvlv_buff;
 	u16 tvlv_buff_len;
@@ -1115,7 +1115,7 @@ free_skb:
 int batadv_recv_frag_packet(struct sk_buff *skb,
 			    struct batadv_hard_iface *recv_if)
 {
-	struct batadv_priv *bat_priv = netdev_priv(recv_if->soft_iface);
+	struct batadv_priv *bat_priv = netdev_priv(recv_if->mesh_iface);
 	struct batadv_orig_node *orig_node_src = NULL;
 	struct batadv_frag_packet *frag_packet;
 	int ret = NET_RX_DROP;
@@ -1177,7 +1177,7 @@ free_skb:
 int batadv_recv_bcast_packet(struct sk_buff *skb,
 			     struct batadv_hard_iface *recv_if)
 {
-	struct batadv_priv *bat_priv = netdev_priv(recv_if->soft_iface);
+	struct batadv_priv *bat_priv = netdev_priv(recv_if->mesh_iface);
 	struct batadv_orig_node *orig_node = NULL;
 	struct batadv_bcast_packet *bcast_packet;
 	struct ethhdr *ethhdr;
@@ -1265,7 +1265,7 @@ int batadv_recv_bcast_packet(struct sk_buff *skb,
 	batadv_dat_snoop_incoming_dhcp_ack(bat_priv, skb, hdr_size);
 
 	/* broadcast for me */
-	batadv_interface_rx(recv_if->soft_iface, skb, hdr_size, orig_node);
+	batadv_interface_rx(recv_if->mesh_iface, skb, hdr_size, orig_node);
 
 rx_success:
 	ret = NET_RX_SUCCESS;

@@ -69,7 +69,7 @@ int __init batadv_nc_init(void)
 
 /**
  * batadv_nc_start_timer() - initialise the nc periodic worker
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  */
 static void batadv_nc_start_timer(struct batadv_priv *bat_priv)
 {
@@ -80,7 +80,7 @@ static void batadv_nc_start_timer(struct batadv_priv *bat_priv)
 /**
  * batadv_nc_tvlv_container_update() - update the network coding tvlv container
  *  after network coding setting change
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  */
 static void batadv_nc_tvlv_container_update(struct batadv_priv *bat_priv)
 {
@@ -102,7 +102,7 @@ static void batadv_nc_tvlv_container_update(struct batadv_priv *bat_priv)
 /**
  * batadv_nc_status_update() - update the network coding tvlv container after
  *  network coding setting change
- * @net_dev: the soft interface net device
+ * @net_dev: the mesh interface net device
  */
 void batadv_nc_status_update(struct net_device *net_dev)
 {
@@ -113,7 +113,7 @@ void batadv_nc_status_update(struct net_device *net_dev)
 
 /**
  * batadv_nc_tvlv_ogm_handler_v1() - process incoming nc tvlv container
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  * @orig: the orig_node of the ogm
  * @flags: flags indicating the tvlv state (see batadv_tvlv_handler_flags)
  * @tvlv_value: tvlv buffer containing the gateway data
@@ -132,7 +132,7 @@ static void batadv_nc_tvlv_ogm_handler_v1(struct batadv_priv *bat_priv,
 
 /**
  * batadv_nc_mesh_init() - initialise coding hash table and start housekeeping
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  *
  * Return: 0 on success or negative error number in case of failure
  */
@@ -173,7 +173,7 @@ err:
 
 /**
  * batadv_nc_init_bat_priv() - initialise the nc specific bat_priv variables
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  */
 void batadv_nc_init_bat_priv(struct batadv_priv *bat_priv)
 {
@@ -263,7 +263,7 @@ static void batadv_nc_packet_free(struct batadv_nc_packet *nc_packet,
 
 /**
  * batadv_nc_to_purge_nc_node() - checks whether an nc node has to be purged
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  * @nc_node: the nc node to check
  *
  * Return: true if the entry has to be purged now, false otherwise
@@ -279,7 +279,7 @@ static bool batadv_nc_to_purge_nc_node(struct batadv_priv *bat_priv,
 
 /**
  * batadv_nc_to_purge_nc_path_coding() - checks whether an nc path has timed out
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  * @nc_path: the nc path to check
  *
  * Return: true if the entry has to be purged now, false otherwise
@@ -300,7 +300,7 @@ static bool batadv_nc_to_purge_nc_path_coding(struct batadv_priv *bat_priv,
 /**
  * batadv_nc_to_purge_nc_path_decoding() - checks whether an nc path has timed
  *  out
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  * @nc_path: the nc path to check
  *
  * Return: true if the entry has to be purged now, false otherwise
@@ -321,7 +321,7 @@ static bool batadv_nc_to_purge_nc_path_decoding(struct batadv_priv *bat_priv,
 /**
  * batadv_nc_purge_orig_nc_nodes() - go through list of nc nodes and purge stale
  *  entries
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  * @list: list of nc nodes
  * @lock: nc node list lock
  * @to_purge: function in charge to decide whether an entry has to be purged or
@@ -359,7 +359,7 @@ batadv_nc_purge_orig_nc_nodes(struct batadv_priv *bat_priv,
 /**
  * batadv_nc_purge_orig() - purges all nc node data attached of the given
  *  originator
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  * @orig_node: orig_node with the nc node entries to be purged
  * @to_purge: function in charge to decide whether an entry has to be purged or
  *	      not. This function takes the nc node as argument and has to return
@@ -385,7 +385,7 @@ void batadv_nc_purge_orig(struct batadv_priv *bat_priv,
 /**
  * batadv_nc_purge_orig_hash() - traverse entire originator hash to check if
  *  they have timed out nc nodes
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  */
 static void batadv_nc_purge_orig_hash(struct batadv_priv *bat_priv)
 {
@@ -412,7 +412,7 @@ static void batadv_nc_purge_orig_hash(struct batadv_priv *bat_priv)
 /**
  * batadv_nc_purge_paths() - traverse all nc paths part of the hash and remove
  *  unused ones
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  * @hash: hash table containing the nc paths to check
  * @to_purge: function in charge to decide whether an entry has to be purged or
  *	      not. This function takes the nc node as argument and has to return
@@ -575,7 +575,7 @@ static void batadv_nc_send_packet(struct batadv_nc_packet *nc_packet)
 
 /**
  * batadv_nc_sniffed_purge() - Checks timestamp of given sniffed nc_packet.
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  * @nc_path: the nc path the packet belongs to
  * @nc_packet: the nc packet to be checked
  *
@@ -614,7 +614,7 @@ out:
 
 /**
  * batadv_nc_fwd_flush() - Checks the timestamp of the given nc packet.
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  * @nc_path: the nc path the packet belongs to
  * @nc_packet: the nc packet to be checked
  *
@@ -653,7 +653,7 @@ static bool batadv_nc_fwd_flush(struct batadv_priv *bat_priv,
 /**
  * batadv_nc_process_nc_paths() - traverse given nc packet pool and free timed
  *  out nc packets
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  * @hash: to be processed hash table
  * @process_fn: Function called to process given nc packet. Should return true
  *	        to encourage this function to proceed with the next packet.
@@ -740,7 +740,7 @@ static void batadv_nc_worker(struct work_struct *work)
 /**
  * batadv_can_nc_with_orig() - checks whether the given orig node is suitable
  *  for coding or not
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  * @orig_node: neighboring orig node which may be used as nc candidate
  * @ogm_packet: incoming ogm packet also used for the checks
  *
@@ -821,7 +821,7 @@ batadv_nc_find_nc_node(struct batadv_orig_node *orig_node,
 /**
  * batadv_nc_get_nc_node() - retrieves an nc node or creates the entry if it was
  *  not found
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  * @orig_node: orig node originating the ogm packet
  * @orig_neigh_node: neighboring orig node from which we received the ogm packet
  *  (can be equal to orig_node)
@@ -884,7 +884,7 @@ unlock:
 /**
  * batadv_nc_update_nc_node() - updates stored incoming and outgoing nc node
  *  structs (best called on incoming OGMs)
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  * @orig_node: orig node originating the ogm packet
  * @orig_neigh_node: neighboring orig node from which we received the ogm packet
  *  (can be equal to orig_node)
@@ -938,7 +938,7 @@ out:
 
 /**
  * batadv_nc_get_path() - get existing nc_path or allocate a new one
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  * @hash: hash table containing the nc path
  * @src: ethernet source address - first half of the nc path search key
  * @dst: ethernet destination address - second half of the nc path search key
@@ -1030,7 +1030,7 @@ static void batadv_nc_memxor(char *dst, const char *src, unsigned int len)
 /**
  * batadv_nc_code_packets() - code a received unicast_packet with an nc packet
  *  into a coded_packet and send it
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  * @skb: data skb to forward
  * @ethhdr: pointer to the ethernet header inside the skb
  * @nc_packet: structure containing the packet to the skb can be coded with
@@ -1247,7 +1247,7 @@ static bool batadv_nc_skb_coding_possible(struct sk_buff *skb, u8 *dst, u8 *src)
 /**
  * batadv_nc_path_search() - Find the coding path matching in_nc_node and
  *  out_nc_node to retrieve a buffered packet that can be used for coding.
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  * @in_nc_node: pointer to skb next hop's neighbor nc node
  * @out_nc_node: pointer to skb source's neighbor nc node
  * @skb: data skb to forward
@@ -1315,7 +1315,7 @@ batadv_nc_path_search(struct batadv_priv *bat_priv,
 /**
  * batadv_nc_skb_src_search() - Loops through the list of neighboring nodes of
  *  the skb's sender (may be equal to the originator).
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  * @skb: data skb to forward
  * @eth_dst: next hop mac address of skb
  * @eth_src: source mac address of skb
@@ -1361,7 +1361,7 @@ batadv_nc_skb_src_search(struct batadv_priv *bat_priv,
 /**
  * batadv_nc_skb_store_before_coding() - set the ethernet src and dst of the
  *  unicast skb before it is stored for use in later decoding
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  * @skb: data skb to store
  * @eth_dst_new: new destination mac address of skb
  */
@@ -1410,7 +1410,7 @@ static bool batadv_nc_skb_dst_search(struct sk_buff *skb,
 				     struct batadv_neigh_node *neigh_node,
 				     struct ethhdr *ethhdr)
 {
-	struct net_device *netdev = neigh_node->if_incoming->soft_iface;
+	struct net_device *netdev = neigh_node->if_incoming->mesh_iface;
 	struct batadv_priv *bat_priv = netdev_priv(netdev);
 	struct batadv_orig_node *orig_node = neigh_node->orig_node;
 	struct batadv_nc_node *nc_node;
@@ -1497,7 +1497,7 @@ static bool batadv_nc_skb_add_to_path(struct sk_buff *skb,
 bool batadv_nc_skb_forward(struct sk_buff *skb,
 			   struct batadv_neigh_node *neigh_node)
 {
-	const struct net_device *netdev = neigh_node->if_incoming->soft_iface;
+	const struct net_device *netdev = neigh_node->if_incoming->mesh_iface;
 	struct batadv_priv *bat_priv = netdev_priv(netdev);
 	struct batadv_unicast_packet *packet;
 	struct batadv_nc_path *nc_path;
@@ -1546,7 +1546,7 @@ out:
 /**
  * batadv_nc_skb_store_for_decoding() - save a clone of the skb which can be
  *  used when decoding coded packets
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  * @skb: data skb to store
  */
 void batadv_nc_skb_store_for_decoding(struct batadv_priv *bat_priv,
@@ -1607,7 +1607,7 @@ out:
 /**
  * batadv_nc_skb_store_sniffed_unicast() - check if a received unicast packet
  *  should be saved in the decoding buffer and, if so, store it there
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  * @skb: unicast skb to store
  */
 void batadv_nc_skb_store_sniffed_unicast(struct batadv_priv *bat_priv,
@@ -1627,7 +1627,7 @@ void batadv_nc_skb_store_sniffed_unicast(struct batadv_priv *bat_priv,
 /**
  * batadv_nc_skb_decode_packet() - decode given skb using the decode data stored
  *  in nc_packet
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  * @skb: unicast skb to decode
  * @nc_packet: decode data needed to decode the skb
  *
@@ -1721,7 +1721,7 @@ batadv_nc_skb_decode_packet(struct batadv_priv *bat_priv, struct sk_buff *skb,
 /**
  * batadv_nc_find_decoding_packet() - search through buffered decoding data to
  *  find the data needed to decode the coded packet
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  * @ethhdr: pointer to the ethernet header inside the coded packet
  * @coded: coded packet we try to find decode data for
  *
@@ -1795,7 +1795,7 @@ batadv_nc_find_decoding_packet(struct batadv_priv *bat_priv,
 static int batadv_nc_recv_coded_packet(struct sk_buff *skb,
 				       struct batadv_hard_iface *recv_if)
 {
-	struct batadv_priv *bat_priv = netdev_priv(recv_if->soft_iface);
+	struct batadv_priv *bat_priv = netdev_priv(recv_if->mesh_iface);
 	struct batadv_unicast_packet *unicast_packet;
 	struct batadv_coded_packet *coded_packet;
 	struct batadv_nc_packet *nc_packet;
@@ -1860,7 +1860,7 @@ free_skb:
 
 /**
  * batadv_nc_mesh_free() - clean up network coding memory
- * @bat_priv: the bat priv with all the soft interface information
+ * @bat_priv: the bat priv with all the mesh interface information
  */
 void batadv_nc_mesh_free(struct batadv_priv *bat_priv)
 {

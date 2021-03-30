@@ -41,16 +41,16 @@ static inline void batadv_netif_trans_update(struct net_device *dev)
  * net_device
  */
 #define ether_setup(dev) \
-	void batadv_softif_free2(struct net_device *dev) \
+	void batadv_meshif_free2(struct net_device *dev) \
 	{ \
-		batadv_softif_free(dev); \
+		batadv_meshif_free(dev); \
 		free_netdev(dev); \
 	} \
 	void (*t1)(struct net_device *dev) __attribute__((unused)); \
 	bool t2 __attribute__((unused)); \
 	ether_setup(dev)
-#define needs_free_netdev destructor = batadv_softif_free2; t2
-#define priv_destructor destructor = batadv_softif_free2; t1
+#define needs_free_netdev destructor = batadv_meshif_free2; t2
+#define priv_destructor destructor = batadv_meshif_free2; t1
 
 #endif /* LINUX_VERSION_IS_LESS(4, 11, 9) */
 

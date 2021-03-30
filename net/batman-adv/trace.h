@@ -38,13 +38,13 @@ TRACE_EVENT(batadv_dbg,
 	    TP_ARGS(bat_priv, vaf),
 
 	    TP_STRUCT__entry(
-		    __string(device, bat_priv->soft_iface->name)
+		    __string(device, bat_priv->mesh_iface->name)
 		    __string(driver, KBUILD_MODNAME)
 		    __dynamic_array(char, msg, BATADV_MAX_MSG_LEN)
 	    ),
 
 	    TP_fast_assign(
-		    __assign_str(device, bat_priv->soft_iface->name);
+		    __assign_str(device, bat_priv->mesh_iface->name);
 		    __assign_str(driver, KBUILD_MODNAME);
 		    WARN_ON_ONCE(vsnprintf(__get_dynamic_array(msg),
 					   BATADV_MAX_MSG_LEN,

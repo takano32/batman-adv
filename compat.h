@@ -17,19 +17,19 @@
 
 #if LINUX_VERSION_IS_LESS(4, 13, 0)
 
-#define batadv_softif_validate(__tb, __data, __extack) \
-	batadv_softif_validate(__tb, __data)
+#define batadv_meshif_validate(__tb, __data, __extack) \
+	batadv_meshif_validate(__tb, __data)
 
-#define batadv_softif_newlink(__src_net, __dev, __tb, __data, __extack) \
-	batadv_softif_newlink(__src_net, __dev, __tb, __data)
+#define batadv_meshif_newlink(__src_net, __dev, __tb, __data, __extack) \
+	batadv_meshif_newlink(__src_net, __dev, __tb, __data)
 
 #endif /* LINUX_VERSION_IS_LESS(4, 13, 0) */
 
 
 #if LINUX_VERSION_IS_LESS(4, 15, 0)
 
-#define batadv_softif_slave_add(__dev, __slave_dev, __extack) \
-	batadv_softif_slave_add(__dev, __slave_dev)
+#define batadv_meshif_slave_add(__dev, __slave_dev, __extack) \
+	batadv_meshif_slave_add(__dev, __slave_dev)
 
 #endif /* LINUX_VERSION_IS_LESS(4, 15, 0) */
 
