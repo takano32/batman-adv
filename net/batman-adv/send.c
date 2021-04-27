@@ -792,6 +792,19 @@ err:
 }
 
 /**
+ * batadv_forw_bcast_get_num() - get number of broadcasts on an interface
+ * @if_out: the outgoing interface to forward to
+ * @own_packet: true if it is a self-generated broadcast packet
+ *
+ * Return: Number of (re)broadcasts to send on the given interface.
+ */
+static inline unsigned int
+batadv_forw_bcast_get_num(struct batadv_hard_iface *if_out, bool own_packet)
+{
+	return own_packet ? if_out->num_bcasts_own : if_out->num_bcasts_other;
+}
+
+/**
  * batadv_forw_bcast_packet_if() - forward and queue a broadcast packet
  * @bat_priv: the bat priv with all the soft interface information
  * @skb: broadcast packet to add
@@ -817,9 +830,13 @@ static int batadv_forw_bcast_packet_if(struct batadv_priv *bat_priv,
 				       struct batadv_hard_iface *if_in,
 				       struct batadv_hard_iface *if_out)
 {
-	unsigned int num_bcasts = if_out->num_bcasts;
+	unsigned int num_bcasts = batadv_forw_bcast_get_num(if_out, own_packet);
 	struct sk_buff *newskb;
 	int ret = NETDEV_TX_OK;
+
+	/* filtered by user setting, not an error */
+	if (!num_bcasts)
+		return ret;
 
 	if (!delay) {
 		newskb = skb_clone(skb, GFP_ATOMIC);
@@ -1056,7 +1073,8 @@ bool batadv_forw_packet_is_rebroadcast(struct batadv_forw_packet *forw_packet)
 {
 	unsigned char num_bcasts = BATADV_SKB_CB(forw_packet->skb)->num_bcasts;
 
-	return num_bcasts != forw_packet->if_outgoing->num_bcasts;
+	return num_bcasts != batadv_forw_bcast_get_num(forw_packet->if_outgoing,
+						       forw_packet->own);
 }
 
 /**

@@ -831,6 +831,14 @@ static int batadv_netlink_hardif_fill(struct sk_buff *msg,
 		       atomic_read(&hard_iface->hop_penalty)))
 		goto nla_put_failure;
 
+	if (nla_put_u8(msg, BATADV_ATTR_NUM_BCASTS_OWN,
+		       hard_iface->num_bcasts_own))
+		goto nla_put_failure;
+
+	if (nla_put_u8(msg, BATADV_ATTR_NUM_BCASTS_OTHER,
+		       hard_iface->num_bcasts_other))
+		goto nla_put_failure;
+
 #ifdef CONFIG_BATMAN_ADV_BATMAN_V
 	if (nla_put_u32(msg, BATADV_ATTR_ELP_INTERVAL,
 			atomic_read(&hard_iface->bat_v.elp_interval)))
@@ -931,6 +939,20 @@ static int batadv_netlink_set_hardif(struct sk_buff *skb,
 		attr = info->attrs[BATADV_ATTR_HOP_PENALTY];
 
 		atomic_set(&hard_iface->hop_penalty, nla_get_u8(attr));
+	}
+
+	if (info->attrs[BATADV_ATTR_NUM_BCASTS_OWN]) {
+		attr = info->attrs[BATADV_ATTR_NUM_BCASTS_OWN];
+
+		hard_iface->num_bcasts_own_overwritten = true;
+		hard_iface->num_bcasts_own = nla_get_u8(attr);
+	}
+
+	if (info->attrs[BATADV_ATTR_NUM_BCASTS_OTHER]) {
+		attr = info->attrs[BATADV_ATTR_NUM_BCASTS_OTHER];
+
+		hard_iface->num_bcasts_other_overwritten = true;
+		hard_iface->num_bcasts_other = nla_get_u8(attr);
 	}
 
 #ifdef CONFIG_BATMAN_ADV_BATMAN_V

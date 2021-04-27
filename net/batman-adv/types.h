@@ -173,9 +173,28 @@ struct batadv_hard_iface {
 	char if_status;
 
 	/**
-	 * @num_bcasts: number of payload re-broadcasts on this interface (ARQ)
+	 * @num_bcasts_own: number of payload re-broadcasts on this interface
+	 *  for self-generated broadcast packets
 	 */
-	u8 num_bcasts;
+	u8 num_bcasts_own;
+
+	/**
+	 * @num_bcasts_own_overwritten: stores if num_bcasts_own parameter was
+	 *  overwritten by user
+	 */
+	bool num_bcasts_own_overwritten;
+
+	/**
+	 * @num_bcasts_other: number of payload re-broadcasts on this interface
+	 *  for forwarded broadcast packets
+	 */
+	u8 num_bcasts_other;
+
+	/**
+	 * @num_bcasts_other_overwritten: stores if num_bcasts_own parameter was
+	 *  overwritten by user
+	 */
+	bool num_bcasts_other_overwritten;
 
 	/**
 	 * @wifi_flags: flags whether this is (directly or indirectly) a wifi

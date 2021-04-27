@@ -922,10 +922,15 @@ batadv_hardif_add_interface(struct net_device *net_dev)
 	spin_lock_init(&hard_iface->neigh_list_lock);
 	kref_init(&hard_iface->refcount);
 
-	hard_iface->num_bcasts = BATADV_NUM_BCASTS_DEFAULT;
+	hard_iface->num_bcasts_own = BATADV_NUM_BCASTS_DEFAULT;
+	hard_iface->num_bcasts_own_overwritten = false;
+	hard_iface->num_bcasts_other = BATADV_NUM_BCASTS_DEFAULT;
+	hard_iface->num_bcasts_other_overwritten = false;
 	hard_iface->wifi_flags = batadv_wifi_flags_evaluate(net_dev);
-	if (batadv_is_wifi_hardif(hard_iface))
-		hard_iface->num_bcasts = BATADV_NUM_BCASTS_WIRELESS;
+	if (batadv_is_wifi_hardif(hard_iface)) {
+		hard_iface->num_bcasts_own = BATADV_NUM_BCASTS_WIRELESS;
+		hard_iface->num_bcasts_other = BATADV_NUM_BCASTS_WIRELESS;
+	}
 
 	atomic_set(&hard_iface->hop_penalty, 0);
 
@@ -1037,8 +1042,14 @@ static int batadv_hard_if_event(struct notifier_block *this,
 		break;
 	case NETDEV_CHANGEUPPER:
 		hard_iface->wifi_flags = batadv_wifi_flags_evaluate(net_dev);
-		if (batadv_is_wifi_hardif(hard_iface))
-			hard_iface->num_bcasts = BATADV_NUM_BCASTS_WIRELESS;
+		if (batadv_is_wifi_hardif(hard_iface)) {
+			int num_bcasts = BATADV_NUM_BCASTS_WIRELESS;
+
+			if (!hard_iface->num_bcasts_own_overwritten)
+				hard_iface->num_bcasts_own = num_bcasts;
+			if (!hard_iface->num_bcasts_other_overwritten)
+				hard_iface->num_bcasts_other = num_bcasts;
+		}
 		break;
 	default:
 		break;

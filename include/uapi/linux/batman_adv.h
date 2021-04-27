@@ -481,6 +481,20 @@ enum batadv_nl_attrs {
 	 */
 	BATADV_ATTR_MULTICAST_FANOUT,
 
+	/**
+	 * @BATADV_ATTR_NUM_BCASTS_OWN: defines the number of broadcasts to
+	 *  forward a multicast (including broadcast) payload frame originating
+	 *  from us on a specific interface.
+	 */
+	BATADV_ATTR_NUM_BCASTS_OWN,
+
+	/**
+	 * @BATADV_ATTR_NUM_BCASTS_OTHER: defines the number of broadcasts to
+	 *  forward a multicast (including broadcast) payload frame originating
+	 *  from another node on a specific interface.
+	 */
+	BATADV_ATTR_NUM_BCASTS_OTHER,
+
 	/* add attributes above here, update the policy in netlink.c */
 
 	/**
